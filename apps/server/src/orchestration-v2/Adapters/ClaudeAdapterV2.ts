@@ -4624,11 +4624,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const interruptedTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const steeredTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const queryContext = yield* Ref.make<ClaudeLiveQueryContext | null>(null);
-        // The SDK can't cancel a move, so each command has at most one in
-        // flight. A request made meanwhile, from another steer or the task's
-        // late registration, runs again once that move answers. The entry is
-        // claimed and released without a yield in between, so no request
-        // lands on a move that already decided to stop.
+        // SDK moves cannot be cancelled, so overlapping requests share one move and rerun
+        // after it answers. The final rerun check and release must not yield between them.
         const rootCommandMoves = new Map<string, { rerun: boolean }>();
         const backgroundForSteer = Effect.fn("ClaudeAdapterV2.backgroundForSteer")(
           function* (
