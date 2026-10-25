@@ -306,6 +306,7 @@ import { useThreadLinkedPullRequest } from "./pullRequest/useThreadLinkedPullReq
 import { useProactivePanels } from "../hooks/useProactivePanels";
 import { useIncrementalTimelineEntries } from "../hooks/useIncrementalTimelineEntries";
 import { usePendingTurnDeliveries } from "../state/turnDeliveries";
+import { useUnsentMessages } from "../state/unsentMessages";
 import { useRightPanelSurfaceClose } from "../hooks/useRightPanelSurfaceClose";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { modelFallbackBannerItem } from "./chat/ComposerUsageLimits";
@@ -656,16 +657,21 @@ export default function ChatView(props: ChatViewProps) {
     );
   // Sends waiting on a reconnect live outside this view, so they stay visible across thread switches.
   const pendingTurnDeliveries = usePendingTurnDeliveries(environmentId, threadId);
+  const unsentMessageRecords = useUnsentMessages(environmentId, threadId);
+  const detachedUserMessages = [
+    ...pendingTurnDeliveries.map((delivery) => delivery.display),
+    ...unsentMessageRecords.map((record) => record.display),
+  ];
   const displayedOptimisticMessages =
-    pendingTurnDeliveries.length === 0
+    detachedUserMessages.length === 0
       ? optimisticUserMessages
       : [
           ...optimisticUserMessages,
-          ...pendingTurnDeliveries.flatMap((delivery) =>
-            serverAcknowledgedUserMessageIds.has(delivery.messageId) ||
-            optimisticUserMessages.some((message) => message.id === delivery.messageId)
-              ? []
-              : [delivery.display],
+          ...detachedUserMessages.filter(
+            (display, index) =>
+              !serverAcknowledgedUserMessageIds.has(display.id) &&
+              !optimisticUserMessages.some((message) => message.id === display.id) &&
+              detachedUserMessages.findIndex((other) => other.id === display.id) === index,
           ),
         ];
   // Draft ids survive promotion and expire on navigation, keeping the pending resend scoped correctly.
