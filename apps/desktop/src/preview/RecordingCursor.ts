@@ -14,7 +14,7 @@ import {
 // Modal dialogs, popovers and fullscreen elements paint above any z-index, so the cursors live in
 // the top layer as manual popovers and move back to its front whenever the page adds to it.
 const POPOVER_RESET =
-  "margin:0;padding:0;border:0;background:transparent;overflow:visible;inset:auto;";
+  "margin:0;padding:0;border:0;background:transparent;overflow:visible;inset:auto;animation:none;transition:none;";
 
 /** Draw in guest coordinates; Chromium's native cursor ignores webview CSS placement/scale. Hide it to avoid duplicates. */
 export function installRecordingCursor(
