@@ -109,6 +109,17 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
     updateSettings({ defaultModelSelection: value });
   };
 
+  const storedFallback = settings.fallbackModelSelection;
+  const fallbackEntry = entries.find((entry) => entry.instanceId === storedFallback?.instanceId);
+  const setFallbackModel = (value: ModelSelection) => {
+    const reason = modelDisabledReason(value.instanceId, value.model);
+    if (reason) {
+      toastManager.add({ type: "error", title: "Fallback model not saved", description: reason });
+      return;
+    }
+    updateSettings({ fallbackModelSelection: value });
+  };
+
   const modelRow = (
     <SettingsRow
       serverScoped
@@ -242,34 +253,43 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       }
       control={
         fallbackSelection ? (
-          <ProviderModelPicker
-            environmentId={representative?.environmentId ?? null}
-            activeInstanceId={fallbackSelection.instanceId}
-            model={fallbackSelection.model}
-            lockedProvider={null}
-            instanceEntries={entries}
-            modelOptionsByInstance={fallbackModelOptions}
-            triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-            triggerAriaLabel="Fallback model"
-            {...(mixedFallback
-              ? { triggerLabel: "Mixed" }
-              : settings.fallbackModelSelection === null
-                ? { triggerLabel: "None" }
-                : {})}
-            getModelDisabledReason={modelDisabledReason}
-            onInstanceModelChange={(instanceId, model) => {
-              const reason = modelDisabledReason(instanceId, model);
-              if (reason) {
-                toastManager.add({
-                  type: "error",
-                  title: "Fallback model not saved",
-                  description: reason,
-                });
-                return;
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+            <ProviderModelPicker
+              environmentId={representative?.environmentId ?? null}
+              activeInstanceId={fallbackSelection.instanceId}
+              model={fallbackSelection.model}
+              lockedProvider={null}
+              instanceEntries={entries}
+              modelOptionsByInstance={fallbackModelOptions}
+              triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+              triggerAriaLabel="Fallback model"
+              {...(mixedFallback
+                ? { triggerLabel: "Mixed" }
+                : settings.fallbackModelSelection === null
+                  ? { triggerLabel: "None" }
+                  : {})}
+              getModelDisabledReason={modelDisabledReason}
+              onInstanceModelChange={(instanceId, model) =>
+                setFallbackModel(createModelSelection(instanceId, model))
               }
-              updateSettings({ fallbackModelSelection: createModelSelection(instanceId, model) });
-            }}
-          />
+            />
+            {!mixedFallback && storedFallback && fallbackEntry ? (
+              <TraitsPicker
+                provider={fallbackEntry.driverKind}
+                models={fallbackEntry.models}
+                model={storedFallback.model}
+                modelOptions={storedFallback.options ?? []}
+                allowPromptInjectedEffort={false}
+                planModeEnabled={settings.planModeEnabled}
+                triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                onModelOptionsChange={(options) =>
+                  setFallbackModel(
+                    createModelSelection(storedFallback.instanceId, storedFallback.model, options),
+                  )
+                }
+              />
+            ) : null}
+          </div>
         ) : (
           <span className="text-sm text-muted-foreground">No providers available</span>
         )
