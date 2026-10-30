@@ -924,22 +924,57 @@ describe("ThreadSettlementServiceV2 worker", () => {
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(NOW));
         const fixture = yield* makeHarness({
-          snapshot: makeSnapshot([
-            makeThread("unreadable-worktree", {
-              branch: "unreadable",
-              worktreePath: "/worktrees/unreadable",
-              latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
-            }),
-            makeThread("readable-worktree", {
-              branch: "readable",
-              worktreePath: "/worktrees/readable",
-              latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
-            }),
-          ]),
+          snapshot: makeSnapshot(
+            [
+              makeThread("unreadable-worktree", {
+                branch: "unreadable",
+                worktreePath: "/worktrees/unreadable",
+                latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+              }),
+              // A merged linked pull request still needs the branch recheck before settling.
+              makeThread("unreadable-linked-worktree", {
+                branch: "feature",
+                worktreePath: "/worktrees/unreadable-linked",
+                latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+                linkedPullRequest: {
+                  projectId: PROJECT_ID,
+                  repository: "owner/repository",
+                  number: 41,
+                  url: "https://example.test/owner/repository/pull/41",
+                },
+              }),
+              makeThread("readable-worktree", {
+                branch: "readable",
+                worktreePath: "/worktrees/readable",
+                latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+              }),
+            ],
+            [
+              {
+                ...makeProject(),
+                repositoryIdentity: {
+                  canonicalKey: "example.test/owner/repository",
+                  locator: {
+                    source: "git-remote",
+                    remoteName: "origin",
+                    remoteUrl: "https://example.test/owner/repository.git",
+                  },
+                  provider: SourceControlProviderKind.make("github"),
+                  owner: "owner",
+                  name: "repository",
+                },
+              },
+            ],
+          ),
           existingWorktreePaths: ["/worktrees/readable", "/worktrees/readable/.git"],
-          unreadablePaths: ["/worktrees/unreadable/.git"],
+          unreadablePaths: ["/worktrees/unreadable/.git", "/worktrees/unreadable-linked/.git"],
+          pullRequestSummary: (input) =>
+            Effect.succeed({
+              ...makePullRequestSummary({ ...input, state: "merged" }),
+              mergedAt: NOW,
+            }),
           branchPullRequest: (input) =>
-            input.cwd === "/worktrees/unreadable"
+            input.cwd.startsWith("/worktrees/unreadable")
               ? Effect.die(new Error("git: permission denied"))
               : Effect.succeed(makeBranchPullRequest("merged")),
         });
