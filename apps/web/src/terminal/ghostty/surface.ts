@@ -1179,7 +1179,7 @@ export class GhosttyTerminalSurface {
         // Keep native paste available if the read is denied. The token drops
         // a late read; the gesture drops a native duplicate when the read wins.
         const token = ++this.pasteShortcutToken;
-        // Native paste fires first; reading anyway opens Firefox and Safari's paste prompt.
+        // Native paste usually fires in the keydown task; reading anyway opens Firefox's paste prompt.
         setTimeout(() => {
           if (this.disposed || this.pasteShortcutToken !== token) return;
           void clipboard.readText().then(
