@@ -72,13 +72,19 @@ export function PullRequestMarkdownRepository(props: {
   );
 }
 
-/** Enriched draws an image in a table, list or link itself, from this source, not `renderImage`. */
-function usePullRequestImageSource(resolve: (url: string) => string): MarkdownImageSourceResolver {
+/**
+ * Enriched draws an image in a table, list or link itself, from this source, not `renderImage`.
+ * It keeps a resolved source for the life of the view, so `origin` keys the view to the signed URLs.
+ */
+function usePullRequestImageSource(resolve: (url: string) => string): {
+  readonly resolveImageSource: MarkdownImageSourceResolver;
+  readonly origin: string | null;
+} {
   const location = useContext(PullRequestMediaContext);
   const connection = usePreparedConnection(location?.environmentId ?? null);
   const httpBaseUrl = connection._tag === "Some" ? connection.value.httpBaseUrl : null;
   const createUrl = useAtomQueryRunner(assetEnvironment.createUrl, { reportFailure: false });
-  return async (image) => {
+  const resolveImageSource: MarkdownImageSourceResolver = async (image) => {
     const url = resolve(image.href);
     const source = pullRequestMediaSource(url, location);
     if ("uri" in source) return /^https?:\/\//i.test(url) ? { uri: url } : null;
@@ -92,6 +98,7 @@ function usePullRequestImageSource(resolve: (url: string) => string): MarkdownIm
     if (state._tag !== "Success") throw new Error("Pull request image is unavailable");
     return { uri: state.url };
   };
+  return { resolveImageSource, origin: httpBaseUrl };
 }
 
 function MarkdownImage(props: {
@@ -179,11 +186,12 @@ function PullRequestMarkdownContent(props: {
   const renderImage: MarkdownImageRenderer = (image) => (
     <MarkdownImage href={resolve(image.href)} alt={image.alt} onPreview={setPreview} />
   );
-  const resolveImageSource = usePullRequestImageSource(resolve);
+  const { resolveImageSource, origin } = usePullRequestImageSource(resolve);
   const styles = useMarkdownPreviewStyles();
   return (
     <FilePreviewGallery value={gallery}>
       <SelectableMarkdownText
+        key={origin}
         markdown={markdown}
         textStyle={styles.nativeTextStyle}
         onLinkPress={openLink}
