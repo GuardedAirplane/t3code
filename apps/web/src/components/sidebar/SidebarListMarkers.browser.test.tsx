@@ -5,7 +5,7 @@ import { useState } from "react";
 import { describe, expect, it } from "vite-plus/test";
 
 import { render } from "../../../test/render";
-import { sidebarMarkerId } from "../Sidebar.logic";
+import { sidebarMarkerId, type SidebarSection } from "../Sidebar.logic";
 import { SidebarPointerSensor } from "../Sidebar.pointer";
 import { SidebarSectionPlaceholder } from "./SidebarListMarkers";
 
@@ -27,7 +27,7 @@ function Row(props: { id: string }) {
   );
 }
 
-function ActiveListWithCollapsedSettled() {
+function ListWithCollapsedSettled(props: { draggingFrom: SidebarSection }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(SidebarPointerSensor, SENSOR_OPTIONS));
   return (
@@ -49,12 +49,34 @@ function ActiveListWithCollapsedSettled() {
               label="Settled"
               showHint={activeId !== null}
               isDropTarget={false}
+              draggingFrom={activeId === null ? null : props.draggingFrom}
             />
           </ul>
         </SortableContext>
       </DndContext>
     </div>
   );
+}
+
+async function renderAndPickUpRow(draggingFrom: SidebarSection) {
+  await using screen = await render(<ListWithCollapsedSettled draggingFrom={draggingFrom} />, {
+    // Plain dnd-kit list; nothing here links or navigates.
+    router: false,
+  });
+  const scroller = screen.getByTestId("scroller").element();
+  const row = screen.getByTestId("thread-5").element();
+  expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight);
+  expect(scroller.scrollTop).toBe(0);
+
+  const { left, top } = row.getBoundingClientRect();
+  row.dispatchEvent(pointer("pointerdown", left + 10, top + 18));
+  document.dispatchEvent(pointer("pointermove", left + 10, top + 30));
+  await expect.element(screen.getByText("Settled")).toBeInTheDocument();
+  const hint = screen.getByText("Settled").element().getBoundingClientRect();
+  const viewport = scroller.getBoundingClientRect();
+  const scrollTopAfterPickup = scroller.scrollTop;
+  document.dispatchEvent(pointer("pointerup", left + 10, top + 30));
+  return { scrollTopAfterPickup, hint, viewport };
 }
 
 function pointer(type: string, clientX: number, clientY: number) {
@@ -73,22 +95,12 @@ function pointer(type: string, clientX: number, clientY: number) {
 describe("SidebarSectionPlaceholder", () => {
   // regression: #27586 picking up an Active row scrolled the sidebar to the Settled hint
   it("does not scroll the sidebar when a drag from outside Settled starts", async () => {
-    await using screen = await render(<ActiveListWithCollapsedSettled />, {
-      // Plain dnd-kit list; nothing here links or navigates.
-      router: false,
-    });
-    const scroller = screen.getByTestId("scroller").element();
-    const row = screen.getByTestId("thread-5").element();
-    expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight);
-    expect(scroller.scrollTop).toBe(0);
-
-    const { left, top } = row.getBoundingClientRect();
-    row.dispatchEvent(pointer("pointerdown", left + 10, top + 18));
-    document.dispatchEvent(pointer("pointermove", left + 10, top + 30));
-    await expect.element(screen.getByText("Settled")).toBeInTheDocument();
-    const scrollTopAfterPickup = scroller.scrollTop;
-    document.dispatchEvent(pointer("pointerup", left + 10, top + 30));
-
+    const { scrollTopAfterPickup } = await renderAndPickUpRow("active");
     expect(scrollTopAfterPickup, "picking up an Active row scrolled the sidebar").toBe(0);
+  });
+
+  it("scrolls the hint into view when a drag out of Settled leaves it clipped", async () => {
+    const { hint, viewport } = await renderAndPickUpRow("settled");
+    expect(hint.bottom).toBeLessThanOrEqual(viewport.bottom);
   });
 });

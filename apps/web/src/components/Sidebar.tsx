@@ -3386,6 +3386,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                       dragTargetSection !== "active"))
                                 }
                                 isDropTarget={dragTargetSection === "active"}
+                                draggingFrom={from}
                               />,
                             );
                             break;
@@ -3453,6 +3454,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                       dragTargetSection !== "settled"))
                                 }
                                 isDropTarget={dragTargetSection === "settled"}
+                                draggingFrom={from}
                               />,
                             );
                             break;

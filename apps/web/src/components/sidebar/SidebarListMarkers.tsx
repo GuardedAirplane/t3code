@@ -7,6 +7,7 @@ import {
   animateSidebarLayoutChanges,
   sidebarMarkerId,
   type SidebarListMarker,
+  type SidebarSection,
 } from "../Sidebar.logic";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 
@@ -50,13 +51,17 @@ export function SidebarSectionPlaceholder(props: {
   label: string;
   showHint: boolean;
   isDropTarget: boolean;
+  draggingFrom: SidebarSection | null;
 }) {
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
       className="relative mx-0.5 -mb-px h-0"
-      revealOverflow={props.marker === "settled-placeholder" && props.showHint}
+      // Only the hint left by a row dragged out of Settled may scroll; any other pickup must not move the list.
+      revealOverflow={
+        props.marker === "settled-placeholder" && props.showHint && props.draggingFrom === "settled"
+      }
     >
       {props.showHint ? (
         <div
