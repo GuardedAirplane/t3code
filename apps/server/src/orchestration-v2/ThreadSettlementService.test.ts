@@ -25,6 +25,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -704,6 +705,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     FileSystem.layerNoop({
       exists: (path) => Effect.succeed(options.existingWorktreePaths?.includes(path) ?? false),
     }),
+    Path.layer,
   );
 
   return {
@@ -860,6 +862,46 @@ describe("ThreadSettlementServiceV2 worker", () => {
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
           const settled = (yield* Ref.get(fixture.commands)).map((command) => command.threadId);
           expect(settled).not.toContain(threads[8]!.id);
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("looks up a branch in its worktree only while the worktree has .git", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([
+            makeThread("linked-worktree", {
+              branch: "linked",
+              worktreePath: "/worktrees/linked",
+              latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+            }),
+            // A folder that outlived its .git makes git fail with not_a_repository.
+            makeThread("emptied-worktree", {
+              branch: "emptied",
+              worktreePath: "/worktrees/emptied",
+              latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+            }),
+          ]),
+          existingWorktreePaths: [
+            "/worktrees/linked",
+            "/worktrees/linked/.git",
+            "/worktrees/emptied",
+          ],
+        });
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+          const cwdByBranch = Object.fromEntries(
+            (yield* Ref.get(fixture.branchCalls)).map((call) => [call.branch, call.cwd]),
+          );
+          expect(cwdByBranch).toEqual({
+            linked: "/worktrees/linked",
+            emptied: "/workspace/project",
+          });
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),
