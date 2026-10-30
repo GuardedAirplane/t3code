@@ -4805,6 +4805,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         const moves: Array<{ id: string; offered: number; registered: boolean }> = [];
         const registered = new Set(["registered"]);
         const answers = new Map<string, Deferred.Deferred<void>>();
+        const failOnce = new Set<string>();
         let rejectOffer = false;
         const harness = yield* makeWakeHarnessWithOptions({
           backgroundTasks: (id) =>
@@ -4816,6 +4817,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 registered: isRegistered,
               });
               yield* Queue.offer(moved, id);
+              if (failOnce.delete(id)) {
+                return yield* new ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError({
+                  method: "backgroundTasks",
+                  cause: new Error("Background tasks are disabled."),
+                });
+              }
               const answer = answers.get(id);
               if (answer !== undefined) yield* Deferred.await(answer);
               return isRegistered;
@@ -4971,6 +4978,19 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         assert.deepEqual(
           moves.filter((move) => move.id === "slow").map((move) => move.registered),
           [false, true],
+        );
+        // The SDK throws when background tasks are off; the next steer tries again.
+        failOnce.add("throws");
+        registered.add("throws");
+        yield* command("throws");
+        yield* taskStarted("throws");
+        yield* steer("Skip it.");
+        yield* through("throws");
+        yield* steer("Skip it now.");
+        yield* through("throws");
+        assert.lengthOf(
+          moves.filter((move) => move.id === "throws"),
+          2,
         );
       }).pipe(
         Effect.provide(
