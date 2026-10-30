@@ -430,54 +430,7 @@ it.layer(
   });
 
   describe("ProviderRegistry.layer", () => {
-    it("keeps a workspace's own models on its wire snapshot until a read replaces them", () => {
-      const machineModel = {
-        slug: "opencode/big-pickle",
-        name: "Big Pickle",
-        isCustom: false,
-        capabilities: null,
-      } satisfies ServerProvider["models"][number];
-      const projectModel = { ...machineModel, slug: "uni/medium-gpt", name: "Medium GPT" };
-      const provider = {
-        instanceId: ProviderInstanceId.make("opencode"),
-        driver: ProviderDriverKind.make("opencode"),
-        status: "ready",
-        enabled: true,
-        installed: true,
-        auth: { status: "authenticated" },
-        checkedAt: "2026-03-25T00:00:00.000Z",
-        version: "2.0.0",
-        models: [machineModel],
-        slashCommands: [],
-        skills: [],
-      } satisfies ServerProvider;
-      const workspaceModels = [machineModel, projectModel];
-
-      const result = ProviderRegistry.upsertProviderWorkspaceSnapshot(provider, "/project", {
-        ...provider,
-        models: workspaceModels,
-        workspaceModels,
-      });
-
-      assert.strictEqual(result.models, provider.models);
-      const decoded = decodeServerProvider(encodeServerProvider(result));
-      assert.deepStrictEqual(decoded.workspaceSnapshots?.[0]?.models, workspaceModels);
-
-      const unread = ProviderRegistry.upsertProviderWorkspaceSnapshot(result, "/project", {
-        ...provider,
-        workspaceModelsPending: true,
-      });
-      assert.deepStrictEqual(unread.workspaceSnapshots?.[0]?.models, workspaceModels);
-
-      const removed = ProviderRegistry.upsertProviderWorkspaceSnapshot(
-        unread,
-        "/project",
-        provider,
-      );
-      assert.strictEqual(removed.workspaceSnapshots?.[0]?.models, undefined);
-    });
-
-    it("drops folder catalogs when a machine refresh changes the machine models", () => {
+    it("marks folder catalogs pending when a machine refresh changes the machine models", () => {
       const machineModel = {
         slug: "opencode/big-pickle",
         name: "Big Pickle",
@@ -518,8 +471,15 @@ it.layer(
         models: [machineModel, addedModel],
       });
       assert.deepStrictEqual(
-        changed.workspaceSnapshots?.map((snapshot) => snapshot.cwd),
-        ["/plain"],
+        changed.workspaceSnapshots?.map(({ cwd, models, modelsPending }) => ({
+          cwd,
+          models,
+          modelsPending,
+        })),
+        [
+          { cwd: "/project", models: [machineModel, projectModel], modelsPending: true },
+          { cwd: "/plain", models: undefined, modelsPending: undefined },
+        ],
       );
     });
 
@@ -537,11 +497,15 @@ it.layer(
         slashCommands: [{ name: "global" }],
         skills: [{ name: "global", path: "/global/SKILL.md", enabled: true }],
       } satisfies ServerProvider;
+      const projectModels = [
+        { slug: "project-model", name: "Project Model", isCustom: false, capabilities: null },
+      ] satisfies ServerProvider["models"];
       const scopedSnapshot = {
         ...provider,
         checkedAt: "2026-03-25T00:01:00.000Z",
         slashCommands: [{ name: "project" }],
         skills: [{ name: "project", path: "/project/SKILL.md", enabled: true }],
+        workspaceModels: projectModels,
         optionDescriptors: [
           {
             id: "agent",
@@ -569,6 +533,7 @@ it.layer(
           slashCommands: scopedSnapshot.slashCommands,
           skills: scopedSnapshot.skills,
           optionDescriptors: scopedSnapshot.optionDescriptors,
+          models: projectModels,
         },
       ]);
 
@@ -576,6 +541,7 @@ it.layer(
         ...scopedSnapshot,
         slashCommands: [COMPACT_SLASH_COMMAND],
         slashCommandsPending: true,
+        workspaceModelsPending: true,
       } satisfies ProviderWorkspaceSnapshot;
       const partial = ProviderRegistry.upsertProviderWorkspaceSnapshot(
         result,
@@ -584,6 +550,8 @@ it.layer(
       );
       assert.deepStrictEqual(partial.workspaceSnapshots?.[0]?.slashCommands, [{ name: "project" }]);
       assert.strictEqual(partial.workspaceSnapshots?.[0]?.slashCommandsPending, true);
+      assert.deepStrictEqual(partial.workspaceSnapshots?.[0]?.models, projectModels);
+      assert.strictEqual(partial.workspaceSnapshots?.[0]?.modelsPending, true);
       const otherProject = ProviderRegistry.upsertProviderWorkspaceSnapshot(
         partial,
         "/other-project",
@@ -601,6 +569,14 @@ it.layer(
         { name: "replacement" },
       ]);
       assert.strictEqual(recovered.workspaceSnapshots?.[0]?.slashCommandsPending, undefined);
+      assert.deepStrictEqual(recovered.workspaceSnapshots?.[0]?.models, projectModels);
+      assert.strictEqual(recovered.workspaceSnapshots?.[0]?.modelsPending, undefined);
+      const withoutModels = ProviderRegistry.upsertProviderWorkspaceSnapshot(
+        recovered,
+        "/project",
+        { ...scopedSnapshot, workspaceModels: undefined },
+      );
+      assert.strictEqual(withoutModels.workspaceSnapshots?.[0]?.models, undefined);
 
       const { optionDescriptors, ...failedSnapshot } = scopedSnapshot;
       const firstFailure = ProviderRegistry.upsertProviderWorkspaceSnapshot(
@@ -1632,6 +1608,7 @@ it.layer(
           slashCommands: [],
           skills: [],
         } as const satisfies ServerProvider;
+        const machineProvider = yield* Ref.make<ServerProvider>(provider);
         const scanResult = yield* Ref.make<ProviderWorkspaceSnapshot>({
           ...provider,
           slashCommandsPending: false,
@@ -1654,8 +1631,8 @@ it.layer(
                   packageName: null,
                 }),
               ),
-            getSnapshot: Effect.succeed(provider),
-            refresh: Effect.succeed(provider),
+            getSnapshot: Ref.get(machineProvider),
+            refresh: Ref.get(machineProvider),
             streamChanges: Stream.empty,
             applyUsageLimits: () => Effect.void,
           },
@@ -1706,6 +1683,27 @@ it.layer(
           const recovered = yield* workspaceOf;
           assert.deepStrictEqual(recovered?.models, workspaceModels);
           assert.strictEqual(recovered?.modelsPending, undefined);
+
+          // A fresh refresh whose machine models change still publishes the folder read it ran.
+          const addedModel = { ...machineModel, slug: "opencode/new", name: "New" };
+          const nextWorkspaceModels = [machineModel, addedModel, projectModel];
+          yield* Ref.set(machineProvider, { ...provider, models: [machineModel, addedModel] });
+          yield* Ref.set(scanResult, {
+            ...provider,
+            slashCommandsPending: false,
+            workspaceModels: nextWorkspaceModels,
+          });
+          yield* registry.refreshWorkspaceSnapshot({ instanceId, cwd: "/project", fresh: true });
+          const rescanned = yield* workspaceOf;
+          assert.deepStrictEqual(rescanned?.models, nextWorkspaceModels);
+          assert.strictEqual(rescanned?.modelsPending, undefined);
+
+          // A machine change alone keeps the folder's models until its next read settles.
+          yield* Ref.set(machineProvider, provider);
+          yield* registry.refreshInstance(instanceId);
+          const stale = yield* workspaceOf;
+          assert.deepStrictEqual(stale?.models, nextWorkspaceModels);
+          assert.strictEqual(stale?.modelsPending, true);
         }).pipe(Effect.provide(runtimeServices));
       }),
     );

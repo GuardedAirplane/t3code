@@ -6,7 +6,7 @@ import { SheetHeader } from "../../components/ui/SheetHeader";
 import { Toolbar } from "../../components/ui/Toolbar";
 import * as Dialog from "../../components/ui/Dialog";
 import { createV5StackNavigator as createNativeStackNavigator } from "../../native/createV5StackNavigator";
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, ProviderInstanceId } from "@t3tools/contracts";
 import {
   modelPreferencesMigrationPatch,
   resolveModelPreferences,
@@ -15,7 +15,6 @@ import type {
   EnvironmentId,
   ModelSelection,
   ProjectId,
-  ProviderInstanceId,
   ProviderOptionDescriptor,
   ProviderOptionSelection,
   RuntimeMode,
@@ -23,7 +22,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
-import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomMount, useAtomValue } from "@effect/atom-react";
 import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import {
   getProviderOptionCurrentLabel,
@@ -92,6 +91,7 @@ import { activeComposerDraftKey, useQueuedRunEdit } from "../../state/queued-run
 import { updateThreadDraftModelSelection } from "../../state/use-thread-composer-state";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
+import { providerWorkspaceSnapshotRefresh } from "../../state/provider-workspace-snapshot-refresh";
 import { threadAllowsProviderSwitch } from "../../state/thread-provider-switching";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { mobilePreferencesAtom } from "../../state/preferences";
@@ -637,11 +637,38 @@ function ThreadSettingsSessionProvider(
     toggleFavorite,
   } satisfies ThreadSettingsSessionValue;
 
+  const environmentId = props.environmentId;
+  const cwd = props.cwd;
+  const scannedProviderKeys =
+    providerFilter !== null && providerFilter !== FAVORITES_PROVIDER_FILTER
+      ? [providerFilter]
+      : providerGroups.map((group) => group.providerKey);
+
   return (
     <ThreadSettingsSessionContext.Provider value={value}>
+      {environmentId && cwd
+        ? scannedProviderKeys.map((providerKey) => (
+            <ProviderWorkspaceSnapshotScan
+              key={providerKey}
+              environmentId={environmentId}
+              instanceId={ProviderInstanceId.make(providerKey)}
+              cwd={cwd}
+            />
+          ))
+        : null}
       {props.children}
     </ThreadSettingsSessionContext.Provider>
   );
+}
+
+/** A project's own provider config can add models only its workspace scan lists. */
+function ProviderWorkspaceSnapshotScan(props: {
+  readonly environmentId: EnvironmentId;
+  readonly instanceId: ProviderInstanceId;
+  readonly cwd: string;
+}) {
+  useAtomMount(providerWorkspaceSnapshotRefresh(props));
+  return null;
 }
 
 function useThreadSettingsSession() {

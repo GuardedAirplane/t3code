@@ -244,11 +244,13 @@ const loadOpenCodeAgents = (client: OpencodeClient) =>
   );
 
 /** The providers and agents OpenCode resolves for the client's directory. Fails if either read does. */
-export const loadOpenCodeProviderCatalog = (client: OpencodeClient) =>
-  Effect.all(
-    { providerList: loadOpenCodeProviders(client), agents: loadOpenCodeAgents(client) },
-    { concurrency: "unbounded" },
-  );
+export const loadOpenCodeProviderCatalog = Effect.fn("OpenCodeRuntime.loadOpenCodeProviderCatalog")(
+  (client: OpencodeClient) =>
+    Effect.all(
+      { providerList: loadOpenCodeProviders(client), agents: loadOpenCodeAgents(client) },
+      { concurrency: "unbounded" },
+    ),
+);
 
 export interface ParsedOpenCodeModelSlug {
   readonly providerID: string;

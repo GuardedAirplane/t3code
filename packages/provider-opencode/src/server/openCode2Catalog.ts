@@ -57,5 +57,8 @@ export const loadOpenCode2Catalog = (client: OpenCodeClient, directory: string) 
   );
 
 /** Missing provider names would relabel every model, so a directory read needs them. */
-export const loadOpenCode2DirectoryCatalog = (client: OpenCodeClient, directory: string) =>
-  readCatalog(client, directory, listProviders(client, directory));
+export const loadOpenCode2DirectoryCatalog = Effect.fn(
+  "OpenCodeRuntime.loadOpenCode2DirectoryCatalog",
+)((client: OpenCodeClient, directory: string) =>
+  readCatalog(client, directory, listProviders(client, directory)),
+);
