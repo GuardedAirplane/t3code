@@ -178,6 +178,7 @@ describe("thread settings sheet state", () => {
       }).map((model) => model.label);
 
     expect(visible("")).toEqual(["gpt-next"]);
+    expect(visible("   ")).toEqual(["gpt-next"]);
     expect(visible("Claude Opus 4.8")).toEqual(["Claude Opus 4.8"]);
   });
 });
