@@ -383,6 +383,19 @@ describe("Simlock device host", () => {
       expect(failure.message).toContain("Invalid daemon response");
       expect(failure.message).toContain("404 Not Found");
       yield* Scope.close(scope, Exit.void);
+
+      // A details bag without a usable response line still keeps agent-device's message.
+      const oddPool = yield* fakePool({
+        failOpen: { error: { message: "Invalid daemon response", details: { line: 17 } } },
+      });
+      const oddScope = yield* Scope.make();
+      const oddReady = yield* (yield* makeHost(oddPool, config(), oddScope)).ensureReady(
+        () => Effect.void,
+      );
+      const [oddDevice] = (yield* oddReady.devices.list).devices;
+      const oddFailure = yield* oddReady.devices.boot(oddDevice!).pipe(Effect.flip);
+      expect(oddFailure.message).toContain("Invalid daemon response");
+      yield* Scope.close(oddScope, Exit.void);
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 

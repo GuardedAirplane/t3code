@@ -64,20 +64,28 @@ const CliFailure = Schema.Struct({
     message: Schema.String,
     hint: Schema.optional(Schema.String),
     logPath: Schema.optional(Schema.String),
-    // The daemon's raw response when agent-device could not parse it, e.g. a gateway's 404 page.
-    details: Schema.optional(Schema.Struct({ line: Schema.optional(Schema.String) })),
+    // An open bag; `line` holds the daemon's raw response when agent-device could not parse it.
+    details: Schema.optional(Schema.Unknown),
   }),
 });
+const responseLine = (details: unknown) =>
+  typeof details === "object" && details !== null && "line" in details
+    ? typeof details.line === "string"
+      ? details.line
+      : undefined
+    : undefined;
 const decodeCliFailure = Schema.decodeUnknownOption(Schema.fromJsonString(CliFailure));
-const describeCliFailure = ({ error }: typeof CliFailure.Type) =>
-  [
+const describeCliFailure = ({ error }: typeof CliFailure.Type) => {
+  const line = responseLine(error.details);
+  return [
     error.message,
     error.hint,
-    error.details?.line ? `The daemon answered: ${truncate(error.details.line, 300)}` : undefined,
+    line ? `The daemon answered: ${truncate(line, 300)}` : undefined,
     error.logPath ? `Log: ${error.logPath}` : undefined,
   ]
     .filter((part) => part !== undefined)
     .join(" ");
+};
 
 interface Lease {
   readonly leaseId: string;
@@ -431,11 +439,13 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
   ) {
     const target = parseCatalogId(device.id);
     if (!target) {
+      const reason = "This Simlock device is no longer leased. Open it again from the list.";
       return yield* new DeviceBootError({
         hostId,
         deviceId: device.id,
         reason: "launch_failed",
-        cause: new Error("This Simlock device is no longer leased. Open it again from the list."),
+        diagnostics: reason,
+        cause: new Error(reason),
       });
     }
     const suffix = (yield* Random.nextIntBetween(0, 0xffffff)).toString(16).padStart(6, "0");
