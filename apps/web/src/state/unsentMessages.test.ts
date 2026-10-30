@@ -53,6 +53,7 @@ function unsentSnapshot() {
     previewAnnotations: [],
     reviewComments: [],
     threadContexts: [],
+    environmentContexts: [],
   });
 }
 

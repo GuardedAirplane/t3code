@@ -707,6 +707,12 @@ export function collectUserMessageBlobPreviewUrls(message: ChatMessage): string[
   return previewUrls;
 }
 
+export function revokeUserMessagePreviewUrls(message: ChatMessage): void {
+  for (const previewUrl of collectUserMessageBlobPreviewUrls(message)) {
+    URL.revokeObjectURL(previewUrl);
+  }
+}
+
 export { readFileAsDataUrl } from "../lib/imageCompression";
 
 export { resolveSendEnvMode } from "@t3tools/shared/projectSettings";

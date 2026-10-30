@@ -65,6 +65,10 @@ vi.mock(import("../../state/turnDeliveries"), async () => {
   });
   return {
     turnDeliveries,
+    usePendingTurnDelivery: (environmentId: string, messageId: string) =>
+      useSyncExternalStore(turnDeliveries.subscribe, turnDeliveries.getSnapshot).find(
+        (delivery) => delivery.environmentId === environmentId && delivery.messageId === messageId,
+      ) ?? null,
     usePendingTurnDeliveries: (environmentId: string, threadId: string) =>
       useSyncExternalStore(turnDeliveries.subscribe, turnDeliveries.getSnapshot).filter(
         (delivery) => delivery.environmentId === environmentId && delivery.threadId === threadId,

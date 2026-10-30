@@ -10,7 +10,11 @@ import { AsyncResult } from "effect/reactivity";
 import { expect, it } from "vite-plus/test";
 
 import { DraftId, type DraftThreadState, useComposerDraftStore } from "../../composerDraftStore";
-import { terminalContextReference } from "../../lib/composerContextRecords";
+import {
+  environmentContextRecord,
+  environmentContextReference,
+  terminalContextReference,
+} from "../../lib/composerContextRecords";
 import { formatInlineContextReference } from "../../lib/composerContextReferences";
 import type { TerminalContextDraft } from "../../lib/terminalContext";
 import { snapshotComposerSend } from "../ChatView.logic";
@@ -35,8 +39,15 @@ it("restores an unsent message after a newer draft without replacing it", () => 
   const store = useComposerDraftStore.getState();
   store.setPrompt(target, "Newer draft");
   store.addImages(target, [image("newer")]);
+  const newerEnvironment = environmentContextRecord(EnvironmentId.make("newer-host"), "Newer host");
+  const unsentEnvironment = environmentContextRecord(
+    EnvironmentId.make("unsent-host"),
+    "Unsent host",
+  );
+  store.setEnvironmentContexts(target, [newerEnvironment]);
+  const newerPrompt = store.getComposerDraft(target)?.prompt;
   const unsent = snapshotComposerSend({
-    prompt: "Unsent message",
+    prompt: `Unsent message ${formatInlineContextReference(environmentContextReference(unsentEnvironment))}`,
     images: [image("unsent")],
     files: [],
     terminalContexts: [],
@@ -44,12 +55,14 @@ it("restores an unsent message after a newer draft without replacing it", () => 
     previewAnnotations: [],
     reviewComments: [],
     threadContexts: [],
+    environmentContexts: [unsentEnvironment],
   });
 
   restoreComposerDraft(target, unsent);
 
   const draft = store.getComposerDraft(target);
-  expect(draft?.prompt).toBe("Newer draft\n\nUnsent message");
+  expect(draft?.environmentContexts).toEqual([newerEnvironment, unsentEnvironment]);
+  expect(draft?.prompt.trim()).toBe(`${newerPrompt?.trimEnd()}\n\n${unsent.messageText}`.trim());
   expect(draft?.images.map((attachment) => attachment.id)).toEqual(["newer", "unsent"]);
 });
 
@@ -72,6 +85,7 @@ it("leaves a full newer draft untouched when the unsent attachments do not fit",
     previewAnnotations: [],
     reviewComments: [],
     threadContexts: [],
+    environmentContexts: [],
   });
 
   expect(restoreComposerDraft(target, unsent)).toBe(false);
@@ -110,6 +124,7 @@ it("points a restored terminal reference at the newer draft's copy of the same s
     previewAnnotations: [],
     reviewComments: [],
     threadContexts: [],
+    environmentContexts: [],
   });
 
   expect(restoreComposerDraft(target, unsent)).toBe(true);

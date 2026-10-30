@@ -1289,13 +1289,10 @@ export function useComposerSend(input: ComposerSendInput) {
         clearBackgroundDraftSubmissionByRef(scopeThreadRef(environmentId, threadIdForSend));
       }
       setOptimisticUserMessages((existing) => {
-        const removed = existing.filter((message) => message.id === messageIdForSend);
-        for (const message of removed) {
-          revokeUserMessagePreviewUrls(message);
-        }
         const next = existing.filter((message) => message.id !== messageIdForSend);
         return next.length === existing.length ? existing : next;
       });
+      optimisticBlobPreviews.release(optimisticMessage);
       const restore = () => restoreUnsentComposer(restoreTarget, routeThreadKey, sendSnapshot);
       if (!restore()) {
         unsentMessages.keep({
