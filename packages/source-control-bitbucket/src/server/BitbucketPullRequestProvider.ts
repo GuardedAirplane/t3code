@@ -37,6 +37,7 @@ const CAPABILITIES: PullRequestCapabilities = {
 };
 
 const COMMIT_READ_CAPACITY = 256;
+const COMMIT_READ_TTL = Duration.minutes(15);
 
 const UNAVAILABLE_REQUIREMENT = {
   missing: "Bitbucket needs API credentials on the server. Add them in Settings → Source Control.",
@@ -156,9 +157,9 @@ export const make = Effect.gen(function* () {
       concurrency: 2,
     });
 
-  // Diffstat and conflicts follow from the source and destination commits alone, so sync rereads
-  // them only when either moves; a refresh or a finished turn drops them through
-  // `forgetChangeRequestReads`.
+  // Diffstat and conflicts follow from the source and destination commits, so sync rereads them
+  // when either moves. The expiry catches a destination branch that moved without the pull
+  // request's destination commit following; a refresh or a finished turn drops them sooner.
   const commitStats = yield* Cache.makeWith(
     (key: string) => {
       const [repository, number] = JSON.parse(key) as [string, number, string, string];
@@ -167,7 +168,7 @@ export const make = Effect.gen(function* () {
     {
       capacity: COMMIT_READ_CAPACITY,
       timeToLive: (exit) =>
-        Exit.isSuccess(exit) && exit.value[1] !== null ? Duration.infinity : Duration.zero,
+        Exit.isSuccess(exit) && exit.value[1] !== null ? COMMIT_READ_TTL : Duration.zero,
     },
   );
 

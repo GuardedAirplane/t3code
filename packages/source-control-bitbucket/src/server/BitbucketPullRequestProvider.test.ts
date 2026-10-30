@@ -1,8 +1,10 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
+import * as TestClock from "effect/testing/TestClock";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 
 import * as BitbucketApi from "./BitbucketApi.ts";
@@ -224,7 +226,7 @@ it.effect("rereads only the pull request when sync reads an unchanged pull reque
 );
 
 it.effect(
-  "rereads diffstat and conflicts when either commit moves or the reads are forgotten",
+  "rereads diffstat and conflicts when a commit moves, the reads expire or are forgotten, or conflicts failed",
   () =>
     Effect.gen(function* () {
       const pullRequestAt = (head: string, base: string) =>
@@ -244,6 +246,7 @@ it.effect(
         );
       let pullRequest = pullRequestAt("abc123", "def456");
       let statReads = 0;
+      let conflictsFail = false;
       const provider = yield* make.pipe(
         Effect.provide(
           Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({
@@ -252,7 +255,16 @@ it.effect(
               Effect.sync(() => ++statReads).pipe(
                 Effect.as({ additions: 1, deletions: 0, changedFiles: 1 }),
               ),
-            getMergeability: () => Effect.succeed("mergeable" as const),
+            getMergeability: () =>
+              conflictsFail
+                ? Effect.fail(
+                    new BitbucketApi.BitbucketResponseError({
+                      operation: "request",
+                      status: 503,
+                      responseBodyLength: 0,
+                    }),
+                  )
+                : Effect.succeed("mergeable" as const),
           }),
         ),
       );
@@ -271,8 +283,15 @@ it.effect(
       yield* readSummary(input);
       yield* forget({ repository: "Acme/Web", number: 1 });
       yield* readSummary(input);
+      yield* TestClock.adjust(Duration.minutes(15));
+      yield* readSummary(input);
+      pullRequest = pullRequestAt("cba321", "0a0b0c");
+      conflictsFail = true;
+      expect((yield* readSummary(input)).mergeability).toBe("unknown");
+      conflictsFail = false;
+      expect((yield* readSummary(input)).mergeability).toBe("mergeable");
 
-      expect(statReads).toBe(4);
+      expect(statReads).toBe(7);
     }),
 );
 
