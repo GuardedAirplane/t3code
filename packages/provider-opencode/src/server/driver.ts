@@ -34,6 +34,7 @@ import {
   openCode2SkillsToServerProviderSkills,
   openCodeSkillsToServerProviderSkills,
   openCodeCommandsToServerProviderSlashCommands,
+  openCodeProviderModels,
 } from "./status.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
@@ -387,11 +388,23 @@ export const OpenCodeDriver: ProviderDriver<
               slashCommandsPending: undefined,
             })),
           ),
+          // A project's opencode.jsonc can define its own providers. A failed
+          // read keeps the machine catalog.
+          models: OpenCodeRuntime.loadOpenCodeProviderCatalog(client).pipe(
+            Effect.timeoutOption("10 seconds"),
+            Effect.map((catalog) =>
+              Option.isSome(catalog)
+                ? openCodeProviderModels(effectiveConfig, catalog.value)
+                : undefined,
+            ),
+            Effect.orElseSucceed(() => undefined),
+          ),
         },
         { concurrency: "unbounded" },
       ).pipe(
-        Effect.map(({ skills, commandInventory }) => ({
+        Effect.map(({ skills, commandInventory, models }) => ({
           skills,
+          models,
           ...commandInventory,
         })),
       );
@@ -530,12 +543,17 @@ export const OpenCodeDriver: ProviderDriver<
                 snapshot.getSnapshot,
                 loadWorkspaceForCwd(cwd).pipe(Effect.timeout("20 seconds")),
               ]).pipe(
-                Effect.map(([machineSnapshot, { skills, commands, slashCommandsPending }]) => ({
-                  ...machineSnapshot,
-                  skills: openCodeSkillsToServerProviderSkills(skills),
-                  slashCommands: openCodeCommandsToServerProviderSlashCommands(commands),
-                  slashCommandsPending,
-                })),
+                Effect.map(
+                  ([machineSnapshot, { skills, models, commands, slashCommandsPending }]) => ({
+                    ...machineSnapshot,
+                    ...(models === undefined || Equal.equals(models, machineSnapshot.models)
+                      ? {}
+                      : { models, workspaceModels: models }),
+                    skills: openCodeSkillsToServerProviderSkills(skills),
+                    slashCommands: openCodeCommandsToServerProviderSlashCommands(commands),
+                    slashCommandsPending,
+                  }),
+                ),
                 Effect.mapError(
                   (cause) =>
                     new ProviderDriverError({

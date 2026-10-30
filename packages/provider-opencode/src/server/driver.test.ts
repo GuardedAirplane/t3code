@@ -443,6 +443,68 @@ const layerUpdate = Layer.mergeAll(
   Layer.succeed(OpenCodeRuntime.OpenCodeRuntime, changingRuntime),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
+const openCode1Provider = (id: string, models: ReadonlyArray<string>) => ({
+  id,
+  name: id,
+  models: Object.fromEntries(
+    models.map((model) => [model, { id: model, name: model, release_date: "2026-01-01" }]),
+  ),
+});
+const openCode1Project = "/work/project-with-config";
+const openCode1Providers = (directory: string) => {
+  const all = [
+    openCode1Provider("opencode", ["big-pickle"]),
+    ...(directory === openCode1Project ? [openCode1Provider("uni", ["medium-gpt"])] : []),
+  ];
+  return { all, connected: all.map((provider) => provider.id), default: {} };
+};
+const openCode1Runtime = {
+  runOpenCodeCommand: () => Effect.succeed({ stdout: "1.18.18\n", stderr: "", code: 0 }),
+  startOpenCodeServerProcess: () =>
+    Effect.succeed({
+      url: "http://127.0.0.1:4096",
+      version: "1.18.18",
+      isRunning: Effect.succeed(true),
+      exitCode: Effect.never,
+    }),
+  createOpenCodeSdkClient: ({ directory }: { readonly directory: string }) => ({
+    provider: { list: () => Promise.resolve({ data: openCode1Providers(directory) }) },
+    app: { agents: () => Promise.resolve({ data: [] }) },
+    command: { list: () => Promise.resolve({ data: [] }) },
+  }),
+  loadOpenCodeInventory: () =>
+    Effect.succeed({ providerList: openCode1Providers("/machine"), agents: [], skills: [] }),
+  loadOpenCodeSkills: () => Effect.succeed([]),
+} as unknown as OpenCodeRuntime.OpenCodeRuntime["Service"];
+
+it.layer(Layer.mergeAll(layer, Layer.succeed(OpenCodeRuntime.OpenCodeRuntime, openCode1Runtime)))(
+  "OpenCodeDriver on OpenCode 1",
+  (it) => {
+    it.effect("lists a project's own opencode.jsonc models in that project's snapshot", () =>
+      Effect.gen(function* () {
+        const instance = yield* create({}, noHttp);
+        const ready = yield* instance.snapshot.streamChanges.pipe(
+          Stream.filter((snapshot) => snapshot.status === "ready"),
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* Fiber.join(ready);
+        const slugsFor = (cwd: string) =>
+          instance.snapshotForCwd!(cwd).pipe(
+            Effect.map((snapshot) => snapshot.models.map((model) => model.slug).toSorted()),
+          );
+
+        assert.deepStrictEqual(yield* slugsFor(openCode1Project), [
+          "opencode/big-pickle",
+          "uni/medium-gpt",
+        ]);
+        assert.deepStrictEqual(yield* slugsFor("/work/other-project"), ["opencode/big-pickle"]);
+      }).pipe(Effect.scoped),
+    );
+  },
+);
+
 it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
   it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
     "offers no package update for an unknown version and follows a changed one on a fresh read",
