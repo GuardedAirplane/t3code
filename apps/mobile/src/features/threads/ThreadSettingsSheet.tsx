@@ -63,6 +63,7 @@ import { cn } from "../../lib/cn";
 import {
   buildModelOptions,
   groupByProvider,
+  serverConfigForCwd,
   type ModelOption,
   type ProviderGroup,
 } from "../../lib/modelOptions";
@@ -90,6 +91,7 @@ import { useQuietThreadStructure } from "../../state/use-thread-detail";
 import { activeComposerDraftKey, useQueuedRunEdit } from "../../state/queued-run-edit";
 import { updateThreadDraftModelSelection } from "../../state/use-thread-composer-state";
 import { useThreadSelection } from "../../state/use-thread-selection";
+import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { threadAllowsProviderSwitch } from "../../state/thread-provider-switching";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { mobilePreferencesAtom } from "../../state/preferences";
@@ -1498,6 +1500,7 @@ export function ExistingThreadSettingsRouteScreen({
   // Reads the same environmentId/threadId params as the Thread route beneath it.
   const { selectedThread, selectedThreadDetailRef, selectedEnvironmentRuntime } =
     useThreadSelection();
+  const { selectedThreadCwd } = useSelectedThreadWorktree();
   // Streamed text would otherwise re-render the whole model picker on every delta.
   const structure = useQuietThreadStructure(selectedThreadDetailRef);
   const reportedModelSelection = useThreadReportedModelSelection(selectedThreadDetailRef);
@@ -1512,7 +1515,10 @@ export function ExistingThreadSettingsRouteScreen({
     return <View className="flex-1 bg-sheet" />;
   }
 
-  const serverConfig = selectedEnvironmentRuntime?.serverConfig ?? null;
+  const serverConfig = serverConfigForCwd(
+    selectedEnvironmentRuntime?.serverConfig ?? null,
+    selectedThreadCwd,
+  );
   const modelSelection = draftSettings.modelSelection ?? selectedThread.modelSelection;
   const lockedProviderInstanceId = threadAllowsProviderSwitch({
     thread: selectedThread,

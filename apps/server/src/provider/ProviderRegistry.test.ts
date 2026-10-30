@@ -430,6 +430,40 @@ it.layer(
   });
 
   describe("ProviderRegistry.layer", () => {
+    it("carries a workspace's own models onto its wire snapshot only", () => {
+      const machineModel = {
+        slug: "opencode/big-pickle",
+        name: "Big Pickle",
+        isCustom: false,
+        capabilities: null,
+      } satisfies ServerProvider["models"][number];
+      const projectModel = { ...machineModel, slug: "uni/medium-gpt", name: "Medium GPT" };
+      const provider = {
+        instanceId: ProviderInstanceId.make("opencode"),
+        driver: ProviderDriverKind.make("opencode"),
+        status: "ready",
+        enabled: true,
+        installed: true,
+        auth: { status: "authenticated" },
+        checkedAt: "2026-03-25T00:00:00.000Z",
+        version: "2.0.0",
+        models: [machineModel],
+        slashCommands: [],
+        skills: [],
+      } satisfies ServerProvider;
+      const workspaceModels = [machineModel, projectModel];
+
+      const result = ProviderRegistry.upsertProviderWorkspaceSnapshot(provider, "/project", {
+        ...provider,
+        models: workspaceModels,
+        workspaceModels,
+      });
+
+      assert.strictEqual(result.models, provider.models);
+      const decoded = decodeServerProvider(encodeServerProvider(result));
+      assert.deepStrictEqual(decoded.workspaceSnapshots?.[0]?.models, workspaceModels);
+    });
+
     it("stores workspace skills, commands and options without changing machine metadata", () => {
       const provider = {
         instanceId: ProviderInstanceId.make("codex"),

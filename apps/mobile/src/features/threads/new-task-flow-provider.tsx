@@ -33,6 +33,7 @@ import {
   resolveDefaultableModelSelection,
   resolveNewTaskModelSelection,
   resolveSelectableModelSelection,
+  serverConfigForCwd,
 } from "../../lib/modelOptions";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { useAtomValue } from "@effect/atom-react";
@@ -328,7 +329,10 @@ export function NewTaskFlowProvider(
 
   const linkedEnvironments = useLinkedEnvironments(selectedProject?.environmentId ?? null);
   const projectDefaults = useNewTaskProjectDefaults(selectedProject);
-  const selectedEnvironmentServerConfig = projectDefaults.serverConfig;
+  const selectedEnvironmentServerConfig = serverConfigForCwd(
+    projectDefaults.serverConfig,
+    selectedProject?.workspaceRoot ?? null,
+  );
   const isScratchDraft = projectDefaults.isScratch;
   const serverConfigs = useServerConfigs();
   const { connectedEnvironments } = useRemoteConnectionStatus();

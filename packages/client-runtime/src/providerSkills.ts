@@ -132,6 +132,26 @@ export function resolveProviderSlashCommandsForCwd(
   return resolveProviderWorkspaceSnapshot(provider, cwd)?.slashCommands ?? provider.slashCommands;
 }
 
+/** A project's own provider config can add models that only its workspace snapshot lists. */
+function resolveProviderModelsForCwd(
+  provider: ServerProvider,
+  cwd: string | null | undefined,
+): ServerProvider["models"] {
+  return resolveProviderWorkspaceSnapshot(provider, cwd)?.models ?? provider.models;
+}
+
+/** Providers keep their identity unless the cwd has its own catalog. */
+export function resolveProvidersForCwd<P extends ServerProvider>(
+  providers: ReadonlyArray<P>,
+  cwd: string | null | undefined,
+): ReadonlyArray<P> {
+  const resolved = providers.map((provider) => {
+    const models = resolveProviderModelsForCwd(provider, cwd);
+    return models === provider.models ? provider : { ...provider, models };
+  });
+  return resolved.every((provider, index) => provider === providers[index]) ? providers : resolved;
+}
+
 const WORKSPACE_SNAPSHOT_RETRY_COOLDOWN_MS = 10_000;
 // A cwd that never scans, such as a deleted worktree, would otherwise retry forever.
 const WORKSPACE_SNAPSHOT_MAX_ATTEMPTS = 3;

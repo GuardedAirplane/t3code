@@ -3,6 +3,7 @@ import { OpenCodeSettings } from "../settings.ts";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
 import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -29,6 +30,7 @@ import {
   makeOpenCode2ModelLoader,
   makePendingOpenCodeProvider,
   openCode2CommandsToServerProviderSlashCommands,
+  openCode2ProviderModels,
   openCode2SkillsToServerProviderSkills,
   openCodeSkillsToServerProviderSkills,
   openCodeCommandsToServerProviderSlashCommands,
@@ -480,23 +482,43 @@ export const OpenCodeDriver: ProviderDriver<
         !effectiveConfig.enabled
           ? snapshot.getSnapshot
           : byOpenCodeRuntime(runtimeProbe.get, {
-              v2: Effect.all([
-                snapshot.getSnapshot,
-                listOpenCode2Workspace(cwd).pipe(
-                  Effect.timeout("20 seconds"),
-                  Effect.mapError(
-                    (cause) =>
-                      new ProviderDriverError({
-                        driver: DRIVER_KIND,
-                        instanceId,
-                        detail: `Failed to list OpenCode commands and skills for '${cwd}'`,
-                        cause,
-                      }),
+              v2: Effect.all(
+                [
+                  snapshot.getSnapshot,
+                  // A project's opencode.jsonc can define its own providers.
+                  makeOpenCode2ModelLoader(
+                    openCode2Server.withConnection(({ client }) =>
+                      loadOpenCode2Catalog(client, cwd),
+                    ),
+                  ).pipe(
+                    Effect.flatten,
+                    Effect.orElseSucceed(() => []),
+                    Effect.map((catalog) =>
+                      catalog.length === 0
+                        ? undefined
+                        : openCode2ProviderModels(effectiveConfig, catalog),
+                    ),
                   ),
-                ),
-              ]).pipe(
-                Effect.map(([machineSnapshot, { skills, commands }]) => ({
+                  listOpenCode2Workspace(cwd).pipe(
+                    Effect.timeout("20 seconds"),
+                    Effect.mapError(
+                      (cause) =>
+                        new ProviderDriverError({
+                          driver: DRIVER_KIND,
+                          instanceId,
+                          detail: `Failed to list OpenCode commands and skills for '${cwd}'`,
+                          cause,
+                        }),
+                    ),
+                  ),
+                ],
+                { concurrency: "unbounded" },
+              ).pipe(
+                Effect.map(([machineSnapshot, cwdModels, { skills, commands }]) => ({
                   ...machineSnapshot,
+                  ...(cwdModels === undefined || Equal.equals(cwdModels, machineSnapshot.models)
+                    ? {}
+                    : { models: cwdModels, workspaceModels: cwdModels }),
                   skills: openCode2SkillsToServerProviderSkills(skills),
                   slashCommands: openCode2CommandsToServerProviderSlashCommands(commands),
                   // A finished scan lists at least the built-ins. None means it
