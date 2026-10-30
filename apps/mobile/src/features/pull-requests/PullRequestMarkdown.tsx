@@ -15,21 +15,28 @@ import {
   changeRequestReferenceAutolinker,
 } from "@t3tools/client-runtime/pull-request-markdown";
 import type { ReferenceAutolink } from "@t3tools/client-runtime/source-control-clients";
+import { assetUrlStateFromResult } from "@t3tools/client-runtime/state/assets";
 import { linkReferenceAutolinks } from "./pullRequestAutolinks";
+import { assetEnvironment } from "../../state/assets";
+import { usePreparedConnection } from "../../state/session";
+import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { markdownImageSources } from "../../lib/markdownImageSources";
 import { FilePreviewGallery, useFilePreviewGallery } from "../../components/FilePreviewGallery";
-import { pullRequestImageSource } from "./pullRequestMediaSource";
+import { pullRequestImageSource, pullRequestMediaSource } from "./pullRequestMediaSource";
 import {
   FilePreviewModal,
   type FilePreviewSource,
   type FilePreviewItem,
 } from "../../components/FilePreviewModal";
 import { ThreadMarkdownImageView } from "../threads/ThreadMarkdownImage";
-import type { MarkdownImageRenderer } from "../../native/SelectableMarkdownText";
+import type {
+  MarkdownImageRenderer,
+  MarkdownImageSourceResolver,
+} from "../../native/SelectableMarkdownText";
 
 const AutolinksContext = createContext<((text: string) => ReadonlyArray<ReferenceAutolink>) | null>(
   null,
@@ -63,6 +70,28 @@ export function PullRequestMarkdownRepository(props: {
       </LinkResolverContext>
     </AutolinksContext>
   );
+}
+
+/** Enriched draws an image in a table, list or link itself, from this source, not `renderImage`. */
+function usePullRequestImageSource(resolve: (url: string) => string): MarkdownImageSourceResolver {
+  const location = useContext(PullRequestMediaContext);
+  const connection = usePreparedConnection(location?.environmentId ?? null);
+  const httpBaseUrl = connection._tag === "Some" ? connection.value.httpBaseUrl : null;
+  const createUrl = useAtomQueryRunner(assetEnvironment.createUrl, { reportFailure: false });
+  return async (image) => {
+    const url = resolve(image.href);
+    const source = pullRequestMediaSource(url, location);
+    if ("uri" in source) return /^https?:\/\//i.test(url) ? { uri: url } : null;
+    const state = assetUrlStateFromResult(
+      await createUrl({
+        environmentId: source.environmentId,
+        input: { resource: source.resource },
+      }),
+      httpBaseUrl,
+    );
+    if (state._tag !== "Success") throw new Error("Pull request image is unavailable");
+    return { uri: state.url };
+  };
 }
 
 function MarkdownImage(props: {
@@ -150,6 +179,7 @@ function PullRequestMarkdownContent(props: {
   const renderImage: MarkdownImageRenderer = (image) => (
     <MarkdownImage href={resolve(image.href)} alt={image.alt} onPreview={setPreview} />
   );
+  const resolveImageSource = usePullRequestImageSource(resolve);
   const styles = useMarkdownPreviewStyles();
   return (
     <FilePreviewGallery value={gallery}>
@@ -158,6 +188,7 @@ function PullRequestMarkdownContent(props: {
         textStyle={styles.nativeTextStyle}
         onLinkPress={openLink}
         renderImage={renderImage}
+        resolveImageSource={resolveImageSource}
         onImagePress={(href) => setPreview(pullRequestImageSource(resolve(href), mediaContext))}
       />
       <FilePreviewModal source={preview} onRequestClose={() => setPreview(null)} />

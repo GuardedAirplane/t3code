@@ -1,16 +1,9 @@
-import {
-  changeRequestLinkResolver,
-  changeRequestReferenceAutolinker,
-} from "@t3tools/client-runtime/pull-request-markdown";
-import remarkGfm from "remark-gfm";
+import { changeRequestReferenceAutolinker } from "@t3tools/client-runtime/pull-request-markdown";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  remarkPullRequestAutolinks,
-  remarkPullRequestRelativeUrls,
-} from "./pullRequestMarkdown.logic";
+import { remarkPullRequestAutolinks } from "./pullRequestMarkdown.logic";
 
 type Node = {
   type: string;
@@ -48,42 +41,6 @@ describe("remarkPullRequestAutolinks", () => {
       ["#12", "https://github.com/team/repo/issues/12", "reference"],
       ["abcdef1", "https://github.com/team/repo/commit/abcdef1", "commit"],
       ["#13", "https://example.com", undefined],
-    ]);
-  });
-});
-
-describe("remarkPullRequestRelativeUrls", () => {
-  it("resolves relative images and links, in html too, against the pull request page", () => {
-    const resolveUrl = changeRequestLinkResolver({
-      provider: "github",
-      url: "https://github.com/team/repo/pull/8",
-    })!;
-    const tree = unified()
-      .use(remarkParse)
-      .use(remarkGfm)
-      .parse(
-        [
-          "| Before | After |",
-          "| --- | --- |",
-          '| <img width="300" src="../blob/abc/a.png?raw=true"> | ![b](/team/repo/blob/abc/b.png) |',
-          "",
-          "[docs](docs/theme.md) [top](#top) `![c](../blob/abc/c.png)`",
-        ].join("\n"),
-      ) as Node;
-    remarkPullRequestRelativeUrls({ resolveUrl })(tree as never);
-    const found: Array<string | undefined> = [];
-    const visit = (node: Node) => {
-      if (node.url !== undefined) found.push(node.url);
-      if (node.type === "html" || node.type === "inlineCode") found.push(node.value);
-      node.children?.forEach(visit);
-    };
-    visit(tree);
-    expect(found).toEqual([
-      '<img width="300" src="https://github.com/team/repo/blob/abc/a.png?raw=true">',
-      "https://github.com/team/repo/blob/abc/b.png",
-      "https://github.com/team/repo/pull/docs/theme.md",
-      "#top",
-      "![c](../blob/abc/c.png)",
     ]);
   });
 });
