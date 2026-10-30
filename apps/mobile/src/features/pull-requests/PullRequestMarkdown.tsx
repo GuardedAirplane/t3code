@@ -10,7 +10,10 @@ import {
 } from "./PullRequestMedia";
 import { videoMimeType } from "@t3tools/shared/video";
 import { createContext, useContext, useMemo, useState } from "react";
-import { changeRequestReferenceAutolinker } from "@t3tools/client-runtime/pull-request-markdown";
+import {
+  changeRequestLinkResolver,
+  changeRequestReferenceAutolinker,
+} from "@t3tools/client-runtime/pull-request-markdown";
 import type { ReferenceAutolink } from "@t3tools/client-runtime/source-control-clients";
 import { linkReferenceAutolinks } from "./pullRequestAutolinks";
 
@@ -31,6 +34,7 @@ import type { MarkdownImageRenderer } from "../../native/SelectableMarkdownText"
 const AutolinksContext = createContext<((text: string) => ReadonlyArray<ReferenceAutolink>) | null>(
   null,
 );
+const LinkResolverContext = createContext<((url: string) => string) | null>(null);
 
 export function PullRequestMarkdownRepository(props: {
   /** The change request the markdown belongs to, whose host decides what its text links. */
@@ -44,6 +48,7 @@ export function PullRequestMarkdownRepository(props: {
     provider === undefined || url === undefined
       ? null
       : changeRequestReferenceAutolinker({ provider, url });
+  const resolveUrl = changeRequestLinkResolver(props.changeRequest);
   const target = pullRequestTarget(props.params);
   const project = useProject({
     environmentId: target.environmentId,
@@ -53,7 +58,9 @@ export function PullRequestMarkdownRepository(props: {
   const media = cwd ? { environmentId: target.environmentId, cwd } : null;
   return (
     <AutolinksContext value={autolinks}>
-      <PullRequestMediaContext value={media}>{props.children}</PullRequestMediaContext>
+      <LinkResolverContext value={resolveUrl}>
+        <PullRequestMediaContext value={media}>{props.children}</PullRequestMediaContext>
+      </LinkResolverContext>
     </AutolinksContext>
   );
 }
@@ -107,20 +114,32 @@ export function PullRequestMarkdown(props: {
   );
 }
 
+/** The agent writes the guide about the checkout, so its relative links name workspace files. */
+export function PullRequestGuideMarkdown(props: { readonly markdown: string }) {
+  return (
+    <LinkResolverContext value={null}>
+      <PullRequestMarkdown markdown={props.markdown} />
+    </LinkResolverContext>
+  );
+}
+
 function PullRequestMarkdownContent(props: {
   readonly markdown: string;
   readonly imageGroupMarkdown?: string;
 }) {
   const autolinks = useContext(AutolinksContext);
+  const resolveUrl = useContext(LinkResolverContext);
   const mediaContext = useContext(PullRequestMediaContext);
   const markdown = linkReferenceAutolinks(props.markdown, autolinks);
   const openPullRequest = useOpenPullRequest();
+  const resolve = (href: string) => resolveUrl?.(href) ?? href;
   const openLink = (href: string) => {
-    void openPullRequest(href);
+    void openPullRequest(resolve(href));
   };
   const gallery: FilePreviewItem[] = markdownImageSources(
     props.imageGroupMarkdown ?? props.markdown,
   )
+    .map(resolve)
     .filter(
       (uri) =>
         /^https?:\/\//i.test(uri) &&
@@ -129,7 +148,7 @@ function PullRequestMarkdownContent(props: {
     .map((uri) => pullRequestImageSource(uri, mediaContext));
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
   const renderImage: MarkdownImageRenderer = (image) => (
-    <MarkdownImage href={image.href} alt={image.alt} onPreview={setPreview} />
+    <MarkdownImage href={resolve(image.href)} alt={image.alt} onPreview={setPreview} />
   );
   const styles = useMarkdownPreviewStyles();
   return (
@@ -139,7 +158,7 @@ function PullRequestMarkdownContent(props: {
         textStyle={styles.nativeTextStyle}
         onLinkPress={openLink}
         renderImage={renderImage}
-        onImagePress={(href) => setPreview(pullRequestImageSource(href, mediaContext))}
+        onImagePress={(href) => setPreview(pullRequestImageSource(resolve(href), mediaContext))}
       />
       <FilePreviewModal source={preview} onRequestClose={() => setPreview(null)} />
     </FilePreviewGallery>
