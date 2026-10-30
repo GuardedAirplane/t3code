@@ -68,13 +68,16 @@ function Main({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-/** A plain row under the card (environment, worktree, branch) with no surface of its own. */
+/**
+ * A plain row under the card (environment, worktree, branch). It paints the page surface so
+ * timeline text scrolling under the composer overlay cannot show through its labels.
+ */
 function ContextStrip({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="composer-context-strip"
       className={cn(
-        "group/composer-context relative flex w-full items-center gap-2 overflow-x-clip px-2 pt-2 text-muted-foreground",
+        "group/composer-context relative flex w-full items-center gap-2 overflow-x-clip bg-background surface-grain px-2 pt-2 text-muted-foreground",
         className,
       )}
       {...props}
