@@ -184,7 +184,7 @@ it.effect("rereads only the pull request when sync reads an unchanged pull reque
       decodePullRequestJson(`{
       "id": 1, "title": "Sync", "state": "OPEN",
       "source": { "branch": { "name": "feature" }, "commit": { "hash": "abc123" } },
-      "destination": { "branch": { "name": "main" } },
+      "destination": { "branch": { "name": "main" }, "commit": { "hash": "def456" } },
       "created_on": "2026-09-16T00:00:00Z", "updated_on": "2026-09-16T00:00:00Z",
       "links": { "html": { "href": "https://bitbucket.org/acme/web/pull-requests/1" } }
     }`),
@@ -221,6 +221,59 @@ it.effect("rereads only the pull request when sync reads an unchanged pull reque
       secondRead: ["pullRequest"],
     });
   }),
+);
+
+it.effect(
+  "rereads diffstat and conflicts when either commit moves or the reads are forgotten",
+  () =>
+    Effect.gen(function* () {
+      const pullRequestAt = (head: string, base: string) =>
+        Result.getOrThrow(
+          decodePullRequestJson(
+            JSON.stringify({
+              id: 1,
+              title: "Sync",
+              state: "OPEN",
+              source: { branch: { name: "feature" }, commit: { hash: head } },
+              destination: { branch: { name: "main" }, commit: { hash: base } },
+              created_on: "2026-09-16T00:00:00Z",
+              updated_on: "2026-09-16T00:00:00Z",
+              links: { html: { href: "https://bitbucket.org/acme/web/pull-requests/1" } },
+            }),
+          ),
+        );
+      let pullRequest = pullRequestAt("abc123", "def456");
+      let statReads = 0;
+      const provider = yield* make.pipe(
+        Effect.provide(
+          Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({
+            getPullRequest: () => Effect.sync(() => pullRequest),
+            getDiffStat: () =>
+              Effect.sync(() => ++statReads).pipe(
+                Effect.as({ additions: 1, deletions: 0, changedFiles: 1 }),
+              ),
+            getMergeability: () => Effect.succeed("mergeable" as const),
+          }),
+        ),
+      );
+      const readSummary = provider.getChangeRequestSummary;
+      const forget = provider.forgetChangeRequestReads;
+      if (readSummary === undefined || forget === undefined) {
+        return yield* Effect.die("summary reads missing");
+      }
+      const input = { cwd: "/repo", repository: "acme/web", host: "bitbucket.org", number: 1 };
+
+      yield* readSummary(input);
+      pullRequest = pullRequestAt("abc123", "fed789");
+      yield* readSummary(input);
+      pullRequest = pullRequestAt("cba321", "fed789");
+      yield* readSummary(input);
+      yield* readSummary(input);
+      yield* forget({ repository: "Acme/Web", number: 1 });
+      yield* readSummary(input);
+
+      expect(statReads).toBe(4);
+    }),
 );
 
 describe("bitbucketProviderFailure", () => {
