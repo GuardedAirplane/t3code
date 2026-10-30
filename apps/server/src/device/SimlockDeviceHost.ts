@@ -26,6 +26,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { truncate } from "@t3tools/shared/String";
 import type { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
 
 import * as ServerConfig from "../config.ts";
@@ -58,13 +59,25 @@ const decodeCatalog = Schema.decodeUnknownEffect(Catalog);
 const decodeSessionRecord = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ leaseId: Schema.String })),
 );
-const decodeCliFailure = Schema.decodeUnknownOption(
-  Schema.fromJsonString(
-    Schema.Struct({
-      error: Schema.Struct({ message: Schema.String, hint: Schema.optional(Schema.String) }),
-    }),
-  ),
-);
+const CliFailure = Schema.Struct({
+  error: Schema.Struct({
+    message: Schema.String,
+    hint: Schema.optional(Schema.String),
+    logPath: Schema.optional(Schema.String),
+    // The daemon's raw response when agent-device could not parse it, e.g. a gateway's 404 page.
+    details: Schema.optional(Schema.Struct({ line: Schema.optional(Schema.String) })),
+  }),
+});
+const decodeCliFailure = Schema.decodeUnknownOption(Schema.fromJsonString(CliFailure));
+const describeCliFailure = ({ error }: typeof CliFailure.Type) =>
+  [
+    error.message,
+    error.hint,
+    error.details?.line ? `The daemon answered: ${truncate(error.details.line, 300)}` : undefined,
+    error.logPath ? `Log: ${error.logPath}` : undefined,
+  ]
+    .filter((part) => part !== undefined)
+    .join(" ");
 
 interface Lease {
   readonly leaseId: string;
@@ -274,7 +287,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
       return yield* unavailable(
         Option.match(failure, {
           onNone: () => `agent-device ${args[0]} failed (exit code ${result.code ?? "none"}).`,
-          onSome: ({ error }) => (error.hint ? `${error.message} ${error.hint}` : error.message),
+          onSome: describeCliFailure,
         }),
       );
     }
@@ -487,6 +500,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
               hostId,
               deviceId: device.id,
               reason: "launch_failed",
+              diagnostics: truncate(error.reason, 1_997),
               cause: new Error(error.reason),
             })
           : error,
