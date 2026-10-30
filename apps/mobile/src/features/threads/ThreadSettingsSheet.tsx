@@ -639,23 +639,22 @@ function ThreadSettingsSessionProvider(
 
   const environmentId = props.environmentId;
   const cwd = props.cwd;
-  const scannedProviderKeys =
+  // Like the web picker's open tab: scanning every provider would spawn a probe per provider.
+  const scannedInstanceId =
     providerFilter !== null && providerFilter !== FAVORITES_PROVIDER_FILTER
-      ? [providerFilter]
-      : providerGroups.map((group) => group.providerKey);
+      ? ProviderInstanceId.make(providerFilter)
+      : props.providerInstanceId;
 
   return (
     <ThreadSettingsSessionContext.Provider value={value}>
-      {environmentId && cwd
-        ? scannedProviderKeys.map((providerKey) => (
-            <ProviderWorkspaceSnapshotScan
-              key={providerKey}
-              environmentId={environmentId}
-              instanceId={ProviderInstanceId.make(providerKey)}
-              cwd={cwd}
-            />
-          ))
-        : null}
+      {environmentId && cwd && scannedInstanceId ? (
+        <ProviderWorkspaceSnapshotScan
+          key={scannedInstanceId}
+          environmentId={environmentId}
+          instanceId={scannedInstanceId}
+          cwd={cwd}
+        />
+      ) : null}
       {props.children}
     </ThreadSettingsSessionContext.Provider>
   );
