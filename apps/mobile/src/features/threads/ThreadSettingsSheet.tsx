@@ -322,6 +322,8 @@ type ThreadSettingsSessionValue = {
   readonly setSearchQuery: (query: string) => void;
   readonly setShowLegacy: (showLegacy: boolean) => void;
   readonly toggleProvider: (providerKey: string) => void;
+  /** The provider whose catalog for this folder the picker keeps fresh. */
+  readonly workspaceScan: { readonly instanceId: ProviderInstanceId; readonly cwd: string } | null;
 };
 
 const ThreadSettingsSessionContext = createContext<ThreadSettingsSessionValue | null>(null);
@@ -602,8 +604,17 @@ function ThreadSettingsSessionProvider(
     );
   };
 
+  const environmentId = props.environmentId;
+  // Like the web picker's open tab: scanning every provider would spawn a probe per provider.
+  const scannedInstanceId =
+    providerFilter !== null && providerFilter !== FAVORITES_PROVIDER_FILTER
+      ? ProviderInstanceId.make(providerFilter)
+      : props.providerInstanceId;
+  const workspaceScan =
+    props.cwd && scannedInstanceId ? { instanceId: scannedInstanceId, cwd: props.cwd } : null;
+
   const value = {
-    environmentId: props.environmentId,
+    environmentId,
     providerInstanceId: props.providerInstanceId,
     providerGroups,
     manageHidden,
@@ -635,24 +646,17 @@ function ThreadSettingsSessionProvider(
     setShowLegacy: setShowLegacyToggle,
     toggleProvider,
     toggleFavorite,
+    workspaceScan,
   } satisfies ThreadSettingsSessionValue;
-
-  const environmentId = props.environmentId;
-  const cwd = props.cwd;
-  // Like the web picker's open tab: scanning every provider would spawn a probe per provider.
-  const scannedInstanceId =
-    providerFilter !== null && providerFilter !== FAVORITES_PROVIDER_FILTER
-      ? ProviderInstanceId.make(providerFilter)
-      : props.providerInstanceId;
 
   return (
     <ThreadSettingsSessionContext.Provider value={value}>
-      {environmentId && cwd && scannedInstanceId ? (
+      {environmentId && workspaceScan ? (
         <ProviderWorkspaceSnapshotScan
-          key={scannedInstanceId}
+          key={workspaceScan.instanceId}
           environmentId={environmentId}
-          instanceId={scannedInstanceId}
-          cwd={cwd}
+          instanceId={workspaceScan.instanceId}
+          cwd={workspaceScan.cwd}
         />
       ) : null}
       {props.children}
@@ -961,11 +965,20 @@ function ThreadSettingsMainContent(props: {
   const refreshProviders = () => {
     if (!session.environmentId || isRefreshingProviders) return;
     setIsRefreshingProviders(true);
-    void refreshProviderCatalog(session.environmentId).then((result) => {
-      setIsRefreshingProviders(false);
-      const error = providerCatalogRefreshError(result);
-      if (error) Dialog.alert("Could not refresh models", error);
-    });
+    const environmentId = session.environmentId;
+    const workspaceScan = session.workspaceScan;
+    void refreshProviderCatalog(environmentId)
+      .then((result) =>
+        // A project's own models are read per folder, so the machine refresh alone keeps them stale.
+        result._tag === "Success" && workspaceScan
+          ? refreshProvidersCommand({ environmentId, input: { ...workspaceScan, fresh: true } })
+          : result,
+      )
+      .then((result) => {
+        setIsRefreshingProviders(false);
+        const error = providerCatalogRefreshError(result);
+        if (error) Dialog.alert("Could not refresh models", error);
+      });
   };
   const [animationsReady, setAnimationsReady] = useState(false);
   const catalogItems = buildThreadSettingsCatalogItems(session);
