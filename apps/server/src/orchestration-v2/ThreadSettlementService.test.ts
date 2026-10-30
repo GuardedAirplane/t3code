@@ -26,6 +26,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -557,6 +558,7 @@ interface HarnessOptions {
   readonly branchPullRequest?: GitManager.GitManager["Service"]["branchPullRequest"];
   readonly pullRequestSummary?: PullRequestService.PullRequestService["Service"]["summary"];
   readonly existingWorktreePaths?: ReadonlyArray<string>;
+  readonly unreadablePaths?: ReadonlyArray<string>;
   readonly onDispatch?: (command: AutoSettleCommand) => Effect.Effect<void>;
   readonly onScriptRun?: (
     input: ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput,
@@ -703,7 +705,17 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
     Layer.succeed(Crypto.Crypto, testCrypto),
     FileSystem.layerNoop({
-      exists: (path) => Effect.succeed(options.existingWorktreePaths?.includes(path) ?? false),
+      exists: (path) =>
+        options.unreadablePaths?.includes(path)
+          ? Effect.fail(
+              PlatformError.systemError({
+                _tag: "PermissionDenied",
+                module: "FileSystem",
+                method: "exists",
+                pathOrDescriptor: path,
+              }),
+            )
+          : Effect.succeed(options.existingWorktreePaths?.includes(path) ?? false),
     }),
     Path.layer,
   );
@@ -902,6 +914,39 @@ describe("ThreadSettlementServiceV2 worker", () => {
             linked: "/worktrees/linked",
             emptied: "/workspace/project",
           });
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("does not settle a thread whose worktree cannot be checked", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([
+            makeThread("unreadable-worktree", {
+              branch: "unreadable",
+              worktreePath: "/worktrees/unreadable",
+              latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+            }),
+            makeThread("readable-worktree", {
+              branch: "readable",
+              worktreePath: "/worktrees/readable",
+              latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+            }),
+          ]),
+          existingWorktreePaths: ["/worktrees/readable", "/worktrees/readable/.git"],
+          unreadablePaths: ["/worktrees/unreadable/.git"],
+          branchPullRequest: () => Effect.succeed(makeBranchPullRequest("merged")),
+        });
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+          expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).toEqual([
+            ThreadId.make("readable-worktree"),
+          ]);
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

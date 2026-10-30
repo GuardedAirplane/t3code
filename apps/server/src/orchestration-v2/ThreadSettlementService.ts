@@ -382,13 +382,11 @@ export const make = Effect.gen(function* () {
           lookupCwdByThreadId.set(
             thread.id,
             thread.worktreePath !== null &&
-              (yield* fileSystem
-                .exists(path.join(thread.worktreePath, ".git"))
-                .pipe(Effect.orElseSucceed(() => false)))
+              (yield* fileSystem.exists(path.join(thread.worktreePath, ".git")))
               ? thread.worktreePath
               : project.workspaceRoot,
           );
-        }),
+        }).pipe(Effect.ignore({ log: "Warn", message: "checking a thread worktree failed" })),
       { concurrency: 8, discard: true },
     );
     if (mergedPullRequest !== null) {
@@ -496,7 +494,7 @@ export const make = Effect.gen(function* () {
       if (thread.branch === null) return null;
       const cwd = lookupCwdByThreadId.get(thread.id);
       if (cwd === undefined) {
-        return yield* Effect.die(new Error("thread project not found"));
+        return yield* Effect.die(new Error("thread lookup directory not resolved"));
       }
       const refresh = group.filter((member) => shellClosedThreads.delete(member.id)).length > 0;
       return yield* git.branchPullRequest({ cwd, branch: thread.branch }, { refresh });
