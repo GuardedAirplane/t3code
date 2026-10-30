@@ -1,12 +1,18 @@
 import {
+  BearerConnectionCredential,
+  BearerConnectionProfile,
+  BearerConnectionRegistration,
+  BearerConnectionTarget,
   ConnectionTransientError,
   PrimaryConnectionTarget,
 } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { ConnectionCatalogDocument, Persistence } from "@t3tools/client-runtime/platform";
 import { describe, expect, it } from "@effect/vitest";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -97,12 +103,12 @@ describe("ConnectionStorage.makeCatalogBackend", () => {
 });
 
 describe("ConnectionStorage registration writability", () => {
-  it.effect("fails when the desktop cannot encrypt the catalog, without changing it", () =>
+  it.effect("fails when the desktop cannot encrypt the catalog", () =>
     Effect.gen(function* () {
-      const saved = encodeCatalog(emptyCatalog);
+      // Without a keyring the desktop reads no catalog and refuses every save.
       const setConnectionCatalog = vi.fn(() => Promise.resolve(false));
       vi.stubGlobal("window", {
-        desktopBridge: { getConnectionCatalog: () => Promise.resolve(saved), setConnectionCatalog },
+        desktopBridge: { getConnectionCatalog: () => Promise.resolve(null), setConnectionCatalog },
       });
 
       const error = yield* Effect.gen(function* () {
@@ -112,8 +118,50 @@ describe("ConnectionStorage registration writability", () => {
 
       expect(error.operation).toBe("register-connection");
       expect(error.message).toContain("Secret Service keyring");
-      expect(setConnectionCatalog).toHaveBeenCalledWith(saved);
     }),
+  );
+
+  it.effect("keeps a connection another window saved after this window loaded its catalog", () =>
+    Effect.gen(function* () {
+      let saved: string | null = null;
+      vi.stubGlobal("window", {
+        desktopBridge: {
+          getConnectionCatalog: () => Promise.resolve(saved),
+          setConnectionCatalog: (raw: string) => {
+            saved = raw;
+            return Promise.resolve(true);
+          },
+        },
+      });
+      const stale = yield* Layer.build(ConnectionStorage.layer);
+      const other = yield* Layer.build(ConnectionStorage.layer);
+      yield* Context.get(stale, Persistence.ConnectionTargetStore).list;
+      const target = new BearerConnectionTarget({
+        connectionId: "other-window",
+        environmentId: EnvironmentId.make("other-window"),
+        label: "Other window",
+      });
+      yield* Context.get(other, Persistence.ConnectionRegistrationStore).register(
+        new BearerConnectionRegistration({
+          target,
+          profile: new BearerConnectionProfile({
+            connectionId: target.connectionId,
+            environmentId: target.environmentId,
+            label: target.label,
+            httpBaseUrl: "https://other.example.test/",
+            wsBaseUrl: "wss://other.example.test/",
+          }),
+          credential: new BearerConnectionCredential({ token: "other-token" }),
+        }),
+        [target],
+      );
+
+      yield* Context.get(stale, Persistence.ConnectionRegistrationStore).assertWritable;
+
+      const catalog = decodeCatalog(saved!);
+      expect(catalog.targets.map((entry) => entry.environmentId)).toEqual(["other-window"]);
+      expect(catalog.credentials).toHaveLength(1);
+    }).pipe(Effect.scoped),
   );
 });
 

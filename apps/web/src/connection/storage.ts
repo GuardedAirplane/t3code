@@ -383,32 +383,44 @@ export interface CatalogBackend {
   readonly read: Effect.Effect<string | null, ConnectionTransientError>;
   readonly write: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
   readonly quarantine?: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
+  /** Fails when `write` would be refused, rewriting only what is stored now. */
+  readonly probeWrite?: Effect.Effect<void, ConnectionTransientError>;
 }
 
 export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
   const bridge = window.desktopBridge;
   if (bridge !== undefined) {
-    return {
-      read: Effect.tryPromise({
-        try: () => bridge.getConnectionCatalog(),
-        catch: (cause) => catalogError("load", cause),
-      }),
-      write: (raw) =>
-        Effect.tryPromise({
-          try: () => bridge.setConnectionCatalog(raw),
-          catch: (cause) => catalogError("save", cause),
-        }).pipe(
-          Effect.flatMap((stored) =>
-            stored
-              ? Effect.void
-              : Effect.fail(
-                  catalogError(
-                    "save",
-                    "T3 Code could not encrypt saved connections because no system keyring is available or unlocked. On Linux, start and unlock a Secret Service keyring such as GNOME Keyring or KWallet, then restart T3 Code.",
-                  ),
+    const read = Effect.tryPromise({
+      try: () => bridge.getConnectionCatalog(),
+      catch: (cause) => catalogError("load", cause),
+    });
+    const write = (raw: string) =>
+      Effect.tryPromise({
+        try: () => bridge.setConnectionCatalog(raw),
+        catch: (cause) => catalogError("save", cause),
+      }).pipe(
+        Effect.flatMap((stored) =>
+          stored
+            ? Effect.void
+            : Effect.fail(
+                catalogError(
+                  "save",
+                  "T3 Code could not encrypt saved connections because no system keyring is available or unlocked. On Linux, start and unlock a Secret Service keyring such as GNOME Keyring or KWallet, then restart T3 Code.",
                 ),
-          ),
+              ),
         ),
+      );
+    return {
+      read,
+      write,
+      // The desktop reads null both when nothing is saved and when it cannot decrypt.
+      probeWrite: read.pipe(
+        Effect.flatMap((raw) =>
+          raw === null
+            ? encodeCatalog(EMPTY_CONNECTION_CATALOG_DOCUMENT).pipe(Effect.flatMap(write))
+            : write(raw),
+        ),
+      ),
     };
   }
 
@@ -427,6 +439,7 @@ interface CatalogStore {
   readonly update: (
     transform: (catalog: ConnectionCatalogDocumentType) => ConnectionCatalogDocumentType,
   ) => Effect.Effect<void, ConnectionTransientError>;
+  readonly assertWritable: Effect.Effect<void, ConnectionTransientError>;
 }
 
 export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStore")(function* (
@@ -488,7 +501,9 @@ export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStor
     },
   );
 
-  return { read, update } satisfies CatalogStore;
+  const assertWritable = lock.withPermits(1)(backend.probeWrite ?? Effect.void);
+
+  return { read, update, assertWritable } satisfies CatalogStore;
 });
 
 // The stored names predate the rename and stay, so a tab still on an older version and an
@@ -636,9 +651,9 @@ export const layer = Layer.effectContext(
       ),
     });
     const registrationStore = Persistence.ConnectionRegistrationStore.of({
-      assertWritable: catalog
-        .update((document) => document)
-        .pipe(Effect.mapError((cause) => persistenceError("register-connection", cause))),
+      assertWritable: catalog.assertWritable.pipe(
+        Effect.mapError((cause) => persistenceError("register-connection", cause)),
+      ),
       register: Effect.fn("Persistence.ConnectionRegistrationStore.register")(
         function (registration, routes) {
           return catalog
