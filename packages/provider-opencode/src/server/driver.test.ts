@@ -95,7 +95,9 @@ const openCode2Model = (providerID: string, id: string, name: string) => ({
   limit: { context: 1000000, output: 65536 },
 });
 // Serves one machine catalog everywhere plus extra models for the project directory.
-const makeOpenCode2ProjectInstance = (projectCatalog: "listed" | "unavailable") =>
+const makeOpenCode2ProjectInstance = (
+  projectCatalog: "listed" | "models-unavailable" | "providers-unavailable",
+) =>
   Effect.gen(function* () {
     const machineModels = [openCode2Model("opencode", "big-pickle", "Big Pickle")];
     const projectModels = [
@@ -118,7 +120,9 @@ const makeOpenCode2ProjectInstance = (projectCatalog: "listed" | "unavailable") 
       const isProject = directory === openCode2Project;
       const data = pathname === "/api/provider" ? [] : isProject ? projectModels : machineModels;
       const unavailable =
-        isProject && pathname === "/api/model" && projectCatalog === "unavailable";
+        isProject &&
+        ((pathname === "/api/model" && projectCatalog === "models-unavailable") ||
+          (pathname === "/api/provider" && projectCatalog === "providers-unavailable"));
       return Effect.succeed(
         HttpClientResponse.fromWeb(
           request,
@@ -332,18 +336,20 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
-  it.effect("reports a project's catalog unknown when its read fails", () =>
-    Effect.gen(function* () {
-      const snapshotFor = yield* makeOpenCode2ProjectInstance("unavailable");
+  it.effect.each(["models-unavailable", "providers-unavailable"] as const)(
+    "reports a project's catalog unknown when its read fails (%s)",
+    (projectCatalog) =>
+      Effect.gen(function* () {
+        const snapshotFor = yield* makeOpenCode2ProjectInstance(projectCatalog);
 
-      const projectSnapshot = yield* snapshotFor(openCode2Project);
-      assert.deepStrictEqual(
-        projectSnapshot.models.map((entry) => entry.slug),
-        ["opencode/big-pickle"],
-      );
-      assert.strictEqual(projectSnapshot.workspaceModels, undefined);
-      assert.strictEqual(projectSnapshot.workspaceModelsPending, true);
-    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+        const projectSnapshot = yield* snapshotFor(openCode2Project);
+        assert.deepStrictEqual(
+          projectSnapshot.models.map((entry) => entry.slug),
+          ["opencode/big-pickle"],
+        );
+        assert.strictEqual(projectSnapshot.workspaceModels, undefined);
+        assert.strictEqual(projectSnapshot.workspaceModelsPending, true);
+      }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
   it.effect("does not retry a rejected server password in the background", () =>
@@ -476,6 +482,7 @@ const openCode1Provider = (id: string, models: ReadonlyArray<string>) => ({
   ),
 });
 const openCode1Project = "/work/project-with-config";
+const openCode1UnreadableProject = "/work/unreadable-project";
 const openCode1Providers = (directory: string) => {
   const all = [
     openCode1Provider("opencode", ["big-pickle"]),
@@ -493,7 +500,12 @@ const openCode1Runtime = {
       exitCode: Effect.never,
     }),
   createOpenCodeSdkClient: ({ directory }: { readonly directory: string }) => ({
-    provider: { list: () => Promise.resolve({ data: openCode1Providers(directory) }) },
+    provider: {
+      list: () =>
+        directory === openCode1UnreadableProject
+          ? Promise.reject(new Error("provider list failed"))
+          : Promise.resolve({ data: openCode1Providers(directory) }),
+    },
     app: { agents: () => Promise.resolve({ data: [] }) },
     command: { list: () => Promise.resolve({ data: [] }) },
   }),
@@ -525,6 +537,11 @@ it.layer(Layer.mergeAll(layer, Layer.succeed(OpenCodeRuntime.OpenCodeRuntime, op
         const otherSnapshot = yield* instance.snapshotForCwd!("/work/other-project");
         assert.deepStrictEqual(slugsOf(otherSnapshot), ["opencode/big-pickle"]);
         assert.strictEqual(otherSnapshot.workspaceModels, undefined);
+        assert.strictEqual(otherSnapshot.workspaceModelsPending, undefined);
+        const unreadable = yield* instance.snapshotForCwd!(openCode1UnreadableProject);
+        assert.deepStrictEqual(slugsOf(unreadable), ["opencode/big-pickle"]);
+        assert.strictEqual(unreadable.workspaceModels, undefined);
+        assert.strictEqual(unreadable.workspaceModelsPending, true);
       }).pipe(Effect.scoped),
     );
   },

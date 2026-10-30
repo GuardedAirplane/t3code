@@ -968,12 +968,17 @@ function ThreadSettingsMainContent(props: {
     const environmentId = session.environmentId;
     const workspaceScan = session.workspaceScan;
     void refreshProviderCatalog(environmentId)
-      .then((result) =>
+      .then(async (result) => {
         // A project's own models are read per folder, so the machine refresh alone keeps them stale.
-        result._tag === "Success" && workspaceScan
-          ? refreshProvidersCommand({ environmentId, input: { ...workspaceScan, fresh: true } })
-          : result,
-      )
+        // A failed folder read keeps its previous models and retries, so only the machine result alerts.
+        if (result._tag === "Success" && workspaceScan) {
+          await refreshProvidersCommand({
+            environmentId,
+            input: { ...workspaceScan, fresh: true },
+          });
+        }
+        return result;
+      })
       .then((result) => {
         setIsRefreshingProviders(false);
         const error = providerCatalogRefreshError(result);
