@@ -720,8 +720,7 @@ export const make = Effect.gen(function* () {
   });
 
   // NSIS deletes the old install before staging its package in %TEMP% and copying it in, so the
-  // %TEMP% volume peaks near installer + install folder.
-  // A separate install volume only needs about new - old, so it is not checked.
+  // %TEMP% volume peaks near installer + install folder; a separate install volume needs the growth.
   const findInstallSpaceShortfall = Effect.fn("desktop.updates.findInstallSpaceShortfall")(
     function* () {
       if (environment.platform !== "win32") return Option.none<string>();
@@ -730,29 +729,36 @@ export const make = Effect.gen(function* () {
         yield* logUpdaterWarning("skipping the install disk space check without an installer path");
         return Option.none<string>();
       }
+      const installDirectory = environment.path.dirname(environment.resourcesPath);
       return yield* Effect.all({
-        freeBytes: diskSpace.tempFreeBytes,
+        tempFreeBytes: diskSpace.freeBytes(diskSpace.tempDirectory),
+        installFreeBytes: diskSpace.freeBytes(installDirectory),
         installerBytes: fileSystem
           .stat(installer.value)
           .pipe(Effect.map((info) => Number(info.size))),
-        installDirectoryBytes: diskSpace.directoryBytes(
-          environment.path.dirname(environment.resourcesPath),
-        ),
+        installDirectoryBytes: diskSpace.directoryBytes(installDirectory),
       }).pipe(
-        Effect.flatMap(({ freeBytes, installerBytes, installDirectoryBytes }) => {
-          const requiredBytes = installerBytes + installDirectoryBytes + INSTALL_SPACE_MARGIN_BYTES;
-          if (freeBytes >= requiredBytes) return Effect.succeed(Option.none<string>());
-          return logUpdaterWarning("not enough disk space to install the update", {
-            freeBytes,
-            requiredBytes,
-          }).pipe(
-            Effect.as(
-              Option.some(
-                `Not enough disk space to install the update: needs about ${Math.ceil(requiredBytes / MEGABYTE)} MB free, ${Math.floor(freeBytes / MEGABYTE)} MB available.`,
+        Effect.flatMap(
+          ({ tempFreeBytes, installFreeBytes, installerBytes, installDirectoryBytes }) => {
+            const tempRequiredBytes =
+              installerBytes + installDirectoryBytes + INSTALL_SPACE_MARGIN_BYTES;
+            const [freeBytes, requiredBytes] =
+              tempFreeBytes < tempRequiredBytes
+                ? [tempFreeBytes, tempRequiredBytes]
+                : [installFreeBytes, INSTALL_SPACE_MARGIN_BYTES];
+            if (freeBytes >= requiredBytes) return Effect.succeed(Option.none<string>());
+            return logUpdaterWarning("not enough disk space to install the update", {
+              freeBytes,
+              requiredBytes,
+            }).pipe(
+              Effect.as(
+                Option.some(
+                  `Not enough disk space to install the update: needs about ${Math.ceil(requiredBytes / MEGABYTE)} MB free, ${Math.floor(freeBytes / MEGABYTE)} MB available.`,
+                ),
               ),
-            ),
-          );
-        }),
+            );
+          },
+        ),
         Effect.catch((error) =>
           logUpdaterWarning("could not check disk space before installing the update", {
             errorTag: error._tag,
@@ -821,6 +827,12 @@ export const make = Effect.gen(function* () {
           yield* finishUpdateAction("install");
           return { accepted: true, completed: false, failed: true };
         }
+        // A refusal's message would otherwise read as this attempt's failure.
+        yield* updateState((current) =>
+          current.errorContext === "install"
+            ? { ...current, message: null, errorContext: null }
+            : current,
+        );
 
         yield* Ref.set(desktopState.quitting, true);
         yield* Ref.set(installRunningBackendsRef, []);

@@ -561,14 +561,12 @@ describe("DesktopUpdates", () => {
   // regression: #27486 a silent NSIS update on a full volume left a half-written install that no longer launched
   it.effect("keeps a Windows update retryable when the temp volume lacks space", () => {
     const megabyte = 1024 * 1024;
-    const harness = makeHarness({
-      platform: "win32",
-      diskSpace: {
-        tempFreeBytes: 200 * megabyte,
-        installerBytes: 150 * megabyte,
-        installDirectoryBytes: 400 * megabyte,
-      },
-    });
+    const diskSpace = {
+      tempFreeBytes: 200 * megabyte,
+      installerBytes: 150 * megabyte,
+      installDirectoryBytes: 400 * megabyte,
+    };
+    const harness = makeHarness({ platform: "win32", diskSpace });
 
     return Effect.scoped(
       Effect.gen(function* () {
@@ -592,6 +590,11 @@ describe("DesktopUpdates", () => {
         assert.equal(result.state.errorContext, "install");
         assert.isTrue(result.state.canRetry);
         assert.match(result.state.message ?? "", /space/i);
+
+        diskSpace.tempFreeBytes = 2000 * megabyte;
+        const retry = yield* updates.install;
+        assert.equal(harness.quitAndInstalls(), 1);
+        assert.isNull(retry.state.message, "a successful retry still reports the earlier refusal");
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
@@ -633,12 +636,13 @@ describe("DesktopUpdates", () => {
     },
   );
 
-  it.effect("installs a Windows update when the temp volume has room", () => {
+  it.effect("keeps a Windows update retryable when a separate install volume is full", () => {
     const megabyte = 1024 * 1024;
     const harness = makeHarness({
       platform: "win32",
       diskSpace: {
         tempFreeBytes: 2000 * megabyte,
+        installFreeBytes: 5 * megabyte,
         installerBytes: 150 * megabyte,
         installDirectoryBytes: 400 * megabyte,
       },
@@ -654,8 +658,9 @@ describe("DesktopUpdates", () => {
         });
         yield* flushCallbacks;
 
-        assert.isTrue((yield* updates.install).accepted);
-        assert.equal(harness.quitAndInstalls(), 1);
+        const result = yield* updates.install;
+        assert.equal(harness.quitAndInstalls(), 0);
+        assert.match(result.state.message ?? "", /space/i);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });

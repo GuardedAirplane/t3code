@@ -42,9 +42,10 @@ export interface UpdatesHarnessOptions {
   readonly savedChannel?: DesktopAppSettings.DesktopSettings["updateChannel"];
   /** Adds a WSL backend beside the primary, as on a Windows host with WSL enabled. */
   readonly wslBackend?: boolean;
-  /** Sizes a Windows install preflight sees: free bytes on the temp volume, the downloaded installer, and the install folder. */
+  /** Sizes a Windows install preflight reads, live; without `installFreeBytes` temp and install share a volume. */
   readonly diskSpace?: {
-    readonly tempFreeBytes: number;
+    tempFreeBytes: number;
+    readonly installFreeBytes?: number;
     readonly installerBytes: number;
     readonly installDirectoryBytes: number;
   };
@@ -289,10 +290,15 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   const unmeasured = (operation: DesktopDiskSpace.DesktopDiskSpaceError["operation"]) =>
     Effect.fail(new DesktopDiskSpace.DesktopDiskSpaceError({ operation, cause: "unmeasured" }));
   const layerDiskSpace = Layer.succeed(DesktopDiskSpace.DesktopDiskSpace, {
-    tempFreeBytes:
+    tempDirectory: "C:\\Users\\me\\AppData\\Local\\Temp",
+    freeBytes: (path) =>
       diskSpace === undefined
-        ? unmeasured("tempFreeBytes")
-        : Effect.succeed(diskSpace.tempFreeBytes),
+        ? unmeasured("freeBytes")
+        : Effect.sync(() =>
+            path.startsWith("C:\\Users\\me\\AppData\\Local\\Temp")
+              ? diskSpace.tempFreeBytes
+              : (diskSpace.installFreeBytes ?? diskSpace.tempFreeBytes),
+          ),
     directoryBytes: () =>
       diskSpace === undefined
         ? unmeasured("directoryBytes")

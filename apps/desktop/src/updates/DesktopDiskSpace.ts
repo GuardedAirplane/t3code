@@ -17,7 +17,7 @@ const NodeFSP = ((process.getBuiltinModule("original-fs") as typeof NodeFS | und
 export class DesktopDiskSpaceError extends Schema.TaggedError<DesktopDiskSpaceError>()(
   "DesktopDiskSpaceError",
   {
-    operation: Schema.Literals(["tempFreeBytes", "directoryBytes"]),
+    operation: Schema.Literals(["freeBytes", "directoryBytes"]),
     cause: Schema.Defect(),
   },
 ) {
@@ -29,8 +29,10 @@ export class DesktopDiskSpaceError extends Schema.TaggedError<DesktopDiskSpaceEr
 export class DesktopDiskSpace extends Context.Service<
   DesktopDiskSpace,
   {
-    /** Bytes the current user can still write on the volume holding the temp directory. */
-    readonly tempFreeBytes: Effect.Effect<number, DesktopDiskSpaceError>;
+    /** The temp directory a spawned installer inherits. */
+    readonly tempDirectory: string;
+    /** Bytes the current user can still write on the volume holding `path`. */
+    readonly freeBytes: (path: string) => Effect.Effect<number, DesktopDiskSpaceError>;
     /** Total size of the regular files below `path`, without following symlinks. */
     readonly directoryBytes: (path: string) => Effect.Effect<number, DesktopDiskSpaceError>;
   }
@@ -66,13 +68,14 @@ async function sumDirectoryBytes(root: string): Promise<number> {
 }
 
 export const layer = Layer.succeed(DesktopDiskSpace, {
-  tempFreeBytes: Effect.tryPromise({
-    try: () => NodeFSP.statfs(NodeOS.tmpdir()),
-    catch: (cause) => new DesktopDiskSpaceError({ operation: "tempFreeBytes", cause }),
-  }).pipe(
-    Effect.map((stats) => stats.bavail * stats.bsize),
-    Effect.withSpan("DesktopDiskSpace.tempFreeBytes"),
-  ),
+  tempDirectory: NodeOS.tmpdir(),
+  freeBytes: Effect.fn("DesktopDiskSpace.freeBytes")(function* (path: string) {
+    const stats = yield* Effect.tryPromise({
+      try: () => NodeFSP.statfs(path),
+      catch: (cause) => new DesktopDiskSpaceError({ operation: "freeBytes", cause }),
+    });
+    return stats.bavail * stats.bsize;
+  }),
   directoryBytes: Effect.fn("DesktopDiskSpace.directoryBytes")(function* (path: string) {
     return yield* Effect.tryPromise({
       try: () => sumDirectoryBytes(path),
