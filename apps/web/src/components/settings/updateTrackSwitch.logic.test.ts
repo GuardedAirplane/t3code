@@ -102,6 +102,11 @@ describe("nothingToMove", () => {
       ...onlySaves,
       disabledReason: null,
     });
+    // Before the desktop reports its saved track, confirming may still need to save it.
+    expect(nothingToMove({ ...stableSwitch, savedChannel: null })).toEqual({
+      ...onlySaves,
+      disabledReason: null,
+    });
     // A desktop host already on the track still gets its saved track changed.
     expect(nothingToMove({ ...stableSwitch, hasTargets: true })).toEqual({
       ...onlySaves,

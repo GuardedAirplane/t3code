@@ -84,7 +84,7 @@ function SwitchPlan({
   const idle = nothingToMove({
     label,
     channel: release.channel,
-    savedChannel: updateState?.channel ?? "latest",
+    savedChannel: updateState?.channel ?? null,
     switchesLocal,
     crossesLocal,
     rows: everything.rows,

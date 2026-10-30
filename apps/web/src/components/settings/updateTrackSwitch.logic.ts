@@ -54,7 +54,8 @@ export async function prepareLocalTrackSwitch(
 export function nothingToMove(input: {
   readonly label: string;
   readonly channel: DesktopUpdateChannel;
-  readonly savedChannel: DesktopUpdateChannel;
+  // Null until the desktop reports it; an unknown track may still need saving.
+  readonly savedChannel: DesktopUpdateChannel | null;
   readonly switchesLocal: boolean;
   readonly crossesLocal: boolean;
   readonly rows: ReadonlyArray<{ readonly skipped: string | null }>;
