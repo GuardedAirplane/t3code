@@ -75,16 +75,29 @@ describe("CloudEnvironmentConnectRows", () => {
       relayManaged: false,
       serverConfig: null,
     } as const;
+    const laptopOverLan = {
+      environmentId: laptopEnvironmentId,
+      entry: {
+        target: new BearerConnectionTarget({
+          environmentId: laptopEnvironmentId,
+          label: "Laptop",
+          connectionId: "lan-laptop",
+        }),
+      },
+      connection: { phase: "connected", error: null, traceId: null },
+      relayManaged: false,
+      serverConfig: null,
+    } as const;
 
     await using screen = await render(
       <CloudEnvironmentConnectRows
         primaryEnvironmentId={primaryEnvironmentId}
-        savedEnvironments={[wslBackend]}
+        savedEnvironments={[wslBackend, laptopOverLan]}
       />,
     );
 
     await expect.element(screen.getByText("Laptop")).toBeInTheDocument();
-    await expect.element(screen.getByRole("button", { name: "Add route" })).not.toBeInTheDocument();
     await expect.element(screen.getByText("Ubuntu (WSL)")).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("button", { name: "Add route" })).toBeInTheDocument();
   });
 });
