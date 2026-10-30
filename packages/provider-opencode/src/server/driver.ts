@@ -1,4 +1,4 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind, type ServerProviderModel } from "@t3tools/contracts";
 import { OpenCodeSettings } from "../settings.ts";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
@@ -23,7 +23,7 @@ import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textG
 import { ProviderDriverError } from "@t3tools/provider-core/server/errors";
 import { openCodeUsageReader, type OpenCodeUsageReaderEnv } from "./usage.ts";
 import { readOpenCodeGoUsageLimits } from "./usageLimits.ts";
-import { loadOpenCode2Catalog } from "./openCode2Catalog.ts";
+import { loadOpenCode2Catalog, loadOpenCode2DirectoryCatalog } from "./openCode2Catalog.ts";
 import {
   checkOpenCodeProviderStatus,
   loadOpenCode2Workspace,
@@ -35,6 +35,7 @@ import {
   openCodeSkillsToServerProviderSkills,
   openCodeCommandsToServerProviderSlashCommands,
   openCodeProviderModels,
+  readSettledOpenCode2Catalog,
 } from "./status.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
@@ -101,6 +102,17 @@ function byOpenCodeRuntime<A, E, R, PE>(
     Effect.orElseSucceed(() => undefined),
     Effect.flatMap((result) => (result?.generation === "v2" ? paths.v2 : paths.v1)),
   );
+}
+
+// An unread catalog keeps what the registry found before rather than the machine catalog.
+function workspaceModelsFor(
+  machineModels: ReadonlyArray<ServerProviderModel>,
+  cwdModels: Option.Option<ReadonlyArray<ServerProviderModel>>,
+) {
+  if (Option.isNone(cwdModels)) return { workspaceModelsPending: true };
+  return Equal.equals(cwdModels.value, machineModels)
+    ? {}
+    : { models: cwdModels.value, workspaceModels: cwdModels.value };
 }
 
 // Hot reads use the last successful probe; session opens await it to select the correct protocol.
@@ -388,16 +400,15 @@ export const OpenCodeDriver: ProviderDriver<
               slashCommandsPending: undefined,
             })),
           ),
-          // A project's opencode.jsonc can define its own providers. A failed
-          // read keeps the machine catalog.
+          // A project's opencode.jsonc can define its own providers.
           models: OpenCodeRuntime.loadOpenCodeProviderCatalog(client).pipe(
             Effect.timeoutOption("10 seconds"),
-            Effect.map((catalog) =>
-              Option.isSome(catalog)
-                ? openCodeProviderModels(effectiveConfig, catalog.value)
-                : undefined,
+            Effect.map(
+              Option.flatMapNullishOr((catalog) =>
+                openCodeProviderModels(effectiveConfig, catalog),
+              ),
             ),
-            Effect.orElseSucceed(() => undefined),
+            Effect.orElseSucceed(() => Option.none<ReadonlyArray<ServerProviderModel>>()),
           ),
         },
         { concurrency: "unbounded" },
@@ -499,17 +510,13 @@ export const OpenCodeDriver: ProviderDriver<
                 [
                   snapshot.getSnapshot,
                   // A project's opencode.jsonc can define its own providers.
-                  makeOpenCode2ModelLoader(
+                  readSettledOpenCode2Catalog(
                     openCode2Server.withConnection(({ client }) =>
-                      loadOpenCode2Catalog(client, cwd),
+                      loadOpenCode2DirectoryCatalog(client, cwd),
                     ),
                   ).pipe(
-                    Effect.flatten,
-                    Effect.orElseSucceed(() => []),
-                    Effect.map((catalog) =>
-                      catalog.length === 0
-                        ? undefined
-                        : openCode2ProviderModels(effectiveConfig, catalog),
+                    Effect.map(
+                      Option.map((catalog) => openCode2ProviderModels(effectiveConfig, catalog)),
                     ),
                   ),
                   listOpenCode2Workspace(cwd).pipe(
@@ -529,9 +536,7 @@ export const OpenCodeDriver: ProviderDriver<
               ).pipe(
                 Effect.map(([machineSnapshot, cwdModels, { skills, commands }]) => ({
                   ...machineSnapshot,
-                  ...(cwdModels === undefined || Equal.equals(cwdModels, machineSnapshot.models)
-                    ? {}
-                    : { models: cwdModels, workspaceModels: cwdModels }),
+                  ...workspaceModelsFor(machineSnapshot.models, cwdModels),
                   skills: openCode2SkillsToServerProviderSkills(skills),
                   slashCommands: openCode2CommandsToServerProviderSlashCommands(commands),
                   // A finished scan lists at least the built-ins. None means it
@@ -546,9 +551,7 @@ export const OpenCodeDriver: ProviderDriver<
                 Effect.map(
                   ([machineSnapshot, { skills, models, commands, slashCommandsPending }]) => ({
                     ...machineSnapshot,
-                    ...(models === undefined || Equal.equals(models, machineSnapshot.models)
-                      ? {}
-                      : { models, workspaceModels: models }),
+                    ...workspaceModelsFor(machineSnapshot.models, models),
                     skills: openCodeSkillsToServerProviderSkills(skills),
                     slashCommands: openCodeCommandsToServerProviderSlashCommands(commands),
                     slashCommandsPending,

@@ -77,6 +77,79 @@ const create = (config: Partial<OpenCodeSettings>, http: HttpClient.HttpClient) 
 
 const noHttp = HttpClient.make(() => Effect.die("A local binary must not be probed over HTTP"));
 
+const openCode2Project = "/work/project-with-config";
+const openCode2Model = (providerID: string, id: string, name: string) => ({
+  id,
+  modelID: id,
+  providerID,
+  name,
+  package: "@opencode/ai/providers/openai-compatible",
+  settings: {},
+  compatibility: {},
+  capabilities: { tools: true, input: ["text"], output: ["text"] },
+  variants: [],
+  time: { released: 1789516800000 },
+  cost: [{ input: 0, output: 0, cache: { read: 0, write: 0 } }],
+  status: "active",
+  enabled: true,
+  limit: { context: 1000000, output: 65536 },
+});
+// Serves one machine catalog everywhere plus extra models for the project directory.
+const makeOpenCode2ProjectInstance = (projectCatalog: "listed" | "unavailable") =>
+  Effect.gen(function* () {
+    const machineModels = [openCode2Model("opencode", "big-pickle", "Big Pickle")];
+    const projectModels = [
+      ...machineModels,
+      openCode2Model("uni", "medium-gpt", "Medium GPT"),
+      openCode2Model("uni", "large-gpt", "Large GPT"),
+    ];
+    const replay = replayOpenCodeServer(
+      { ...OPENCODE_2_RESPONSES, ...OPENCODE_2_WORKSPACE_RESPONSES },
+      "secret",
+    );
+    const server = HttpClient.make((request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname !== "/api/model" && pathname !== "/api/provider") {
+        return replay.execute(request);
+      }
+      const directory = Option.getOrUndefined(
+        UrlParams.getFirst(request.urlParams, "location[directory]"),
+      );
+      const isProject = directory === openCode2Project;
+      const data = pathname === "/api/provider" ? [] : isProject ? projectModels : machineModels;
+      const unavailable =
+        isProject && pathname === "/api/model" && projectCatalog === "unavailable";
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response(JSON.stringify({ location: { directory }, data }), {
+            status: unavailable ? 503 : 200,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      );
+    });
+    const instance = yield* create(
+      { serverUrl: "http://127.0.0.1:4096", serverPassword: "secret" },
+      server,
+    );
+    const ready = yield* instance.snapshot.streamChanges.pipe(
+      Stream.filter((snapshot) => snapshot.status === "ready"),
+      Stream.take(1),
+      Stream.runCollect,
+      Effect.forkChild,
+    );
+    yield* TestClock.adjust("5 seconds");
+    yield* Fiber.join(ready);
+    // Catalog reads repeat until two agree, so let them settle on the test clock.
+    return (cwd: string) =>
+      Effect.gen(function* () {
+        const read = yield* Effect.forkChild(instance.snapshotForCwd!(cwd));
+        yield* TestClock.adjust("5 seconds");
+        return yield* Fiber.join(read);
+      });
+  });
+
 it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
   it.effect("never starts a 1.x server for an OpenCode 2 instance", () =>
     Effect.gen(function* () {
@@ -241,73 +314,9 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
 
   it.effect("lists a project's own opencode.jsonc models in that project's snapshot", () =>
     Effect.gen(function* () {
-      const project = "/work/project-with-config";
-      const model = (providerID: string, id: string, name: string) => ({
-        id,
-        modelID: id,
-        providerID,
-        name,
-        package: "@opencode/ai/providers/openai-compatible",
-        settings: {},
-        compatibility: {},
-        capabilities: { tools: true, input: ["text"], output: ["text"] },
-        variants: [],
-        time: { released: 1789516800000 },
-        cost: [{ input: 0, output: 0, cache: { read: 0, write: 0 } }],
-        status: "active",
-        enabled: true,
-        limit: { context: 1000000, output: 65536 },
-      });
-      const machineModels = [model("opencode", "big-pickle", "Big Pickle")];
-      const projectModels = [
-        ...machineModels,
-        model("uni", "medium-gpt", "Medium GPT"),
-        model("uni", "large-gpt", "Large GPT"),
-      ];
-      const replay = replayOpenCodeServer(
-        { ...OPENCODE_2_RESPONSES, ...OPENCODE_2_WORKSPACE_RESPONSES },
-        "secret",
-      );
-      const server = HttpClient.make((request) => {
-        const pathname = new URL(request.url).pathname;
-        if (pathname !== "/api/model" && pathname !== "/api/provider") {
-          return replay.execute(request);
-        }
-        const directory = Option.getOrUndefined(
-          UrlParams.getFirst(request.urlParams, "location[directory]"),
-        );
-        const data =
-          pathname === "/api/provider" ? [] : directory === project ? projectModels : machineModels;
-        return Effect.succeed(
-          HttpClientResponse.fromWeb(
-            request,
-            new Response(JSON.stringify({ location: { directory }, data }), {
-              headers: { "content-type": "application/json" },
-            }),
-          ),
-        );
-      });
-      const instance = yield* create(
-        { serverUrl: "http://127.0.0.1:4096", serverPassword: "secret" },
-        server,
-      );
-      const ready = yield* instance.snapshot.streamChanges.pipe(
-        Stream.filter((snapshot) => snapshot.status === "ready"),
-        Stream.take(1),
-        Stream.runCollect,
-        Effect.forkChild,
-      );
-      yield* TestClock.adjust("5 seconds");
-      yield* Fiber.join(ready);
-      // Catalog reads repeat until two agree, so let them settle on the test clock.
-      const snapshotFor = (cwd: string) =>
-        Effect.gen(function* () {
-          const read = yield* Effect.forkChild(instance.snapshotForCwd!(cwd));
-          yield* TestClock.adjust("5 seconds");
-          return yield* Fiber.join(read);
-        });
+      const snapshotFor = yield* makeOpenCode2ProjectInstance("listed");
 
-      const projectSnapshot = yield* snapshotFor(project);
+      const projectSnapshot = yield* snapshotFor(openCode2Project);
       assert.deepStrictEqual(projectSnapshot.models.map((entry) => entry.slug).toSorted(), [
         "opencode/big-pickle",
         "uni/large-gpt",
@@ -318,6 +327,22 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
         otherSnapshot.models.map((entry) => entry.slug),
         ["opencode/big-pickle"],
       );
+      assert.strictEqual(otherSnapshot.workspaceModels, undefined);
+      assert.strictEqual(otherSnapshot.workspaceModelsPending, undefined);
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("reports a project's catalog unknown when its read fails", () =>
+    Effect.gen(function* () {
+      const snapshotFor = yield* makeOpenCode2ProjectInstance("unavailable");
+
+      const projectSnapshot = yield* snapshotFor(openCode2Project);
+      assert.deepStrictEqual(
+        projectSnapshot.models.map((entry) => entry.slug),
+        ["opencode/big-pickle"],
+      );
+      assert.strictEqual(projectSnapshot.workspaceModels, undefined);
+      assert.strictEqual(projectSnapshot.workspaceModelsPending, true);
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
@@ -490,16 +515,16 @@ it.layer(Layer.mergeAll(layer, Layer.succeed(OpenCodeRuntime.OpenCodeRuntime, op
           Effect.forkChild,
         );
         yield* Fiber.join(ready);
-        const slugsFor = (cwd: string) =>
-          instance.snapshotForCwd!(cwd).pipe(
-            Effect.map((snapshot) => snapshot.models.map((model) => model.slug).toSorted()),
-          );
+        const slugsOf = (snapshot: { readonly models: ReadonlyArray<{ readonly slug: string }> }) =>
+          snapshot.models.map((model) => model.slug).toSorted();
 
-        assert.deepStrictEqual(yield* slugsFor(openCode1Project), [
+        assert.deepStrictEqual(slugsOf(yield* instance.snapshotForCwd!(openCode1Project)), [
           "opencode/big-pickle",
           "uni/medium-gpt",
         ]);
-        assert.deepStrictEqual(yield* slugsFor("/work/other-project"), ["opencode/big-pickle"]);
+        const otherSnapshot = yield* instance.snapshotForCwd!("/work/other-project");
+        assert.deepStrictEqual(slugsOf(otherSnapshot), ["opencode/big-pickle"]);
+        assert.strictEqual(otherSnapshot.workspaceModels, undefined);
       }).pipe(Effect.scoped),
     );
   },

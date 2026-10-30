@@ -430,7 +430,7 @@ it.layer(
   });
 
   describe("ProviderRegistry.layer", () => {
-    it("carries a workspace's own models onto its wire snapshot only", () => {
+    it("keeps a workspace's own models on its wire snapshot until a read replaces them", () => {
       const machineModel = {
         slug: "opencode/big-pickle",
         name: "Big Pickle",
@@ -462,6 +462,19 @@ it.layer(
       assert.strictEqual(result.models, provider.models);
       const decoded = decodeServerProvider(encodeServerProvider(result));
       assert.deepStrictEqual(decoded.workspaceSnapshots?.[0]?.models, workspaceModels);
+
+      const unread = ProviderRegistry.upsertProviderWorkspaceSnapshot(result, "/project", {
+        ...provider,
+        workspaceModelsPending: true,
+      });
+      assert.deepStrictEqual(unread.workspaceSnapshots?.[0]?.models, workspaceModels);
+
+      const removed = ProviderRegistry.upsertProviderWorkspaceSnapshot(
+        unread,
+        "/project",
+        provider,
+      );
+      assert.strictEqual(removed.workspaceSnapshots?.[0]?.models, undefined);
     });
 
     it("stores workspace skills, commands and options without changing machine metadata", () => {
