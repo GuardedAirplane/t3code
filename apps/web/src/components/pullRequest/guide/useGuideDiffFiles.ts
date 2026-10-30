@@ -64,7 +64,7 @@ export function useGuideDiffFiles({
       for (const file of parsed.files) files.set(resolveFileDiffPath(file), file);
     }
     next = { key, cursor: data.nextCursor, done: data.nextCursor === null, files, folded: data };
-    const result = next.done ? null : registry.get(pageAtom(next.cursor));
+    const result = next.done || !isMissing(next) ? null : registry.get(pageAtom(next.cursor));
     data = result === null || result.waiting ? null : AsyncResult.getOrElse(result, () => null);
   }
   if (next !== current) setLoaded(next);

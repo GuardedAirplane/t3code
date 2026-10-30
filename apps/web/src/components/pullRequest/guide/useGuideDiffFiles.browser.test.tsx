@@ -98,3 +98,33 @@ it("walks more cached pages than React's re-render limit to reach the requested 
   expect(result.loading).toBe(false);
   expect(result.files).toContainEqual(["wanted.ts", "FOUND"]);
 });
+
+it("does not request the next page once the requested file is loaded", async () => {
+  state.pages.clear();
+  await using stack = new AsyncDisposableStack();
+  const registry = stack.adopt(AtomRegistry.make(), (value) => value.dispose());
+  let nextPageReads = 0;
+  state.pages.set(
+    null,
+    Atom.make<AsyncResult.AsyncResult<PullRequestDiffResult>>(
+      AsyncResult.success(page("wanted.ts", "FOUND", "cursor-1")),
+    ),
+  );
+  state.pages.set(
+    "cursor-1",
+    Atom.make((): AsyncResult.AsyncResult<PullRequestDiffResult> => {
+      nextPageReads++;
+      return AsyncResult.initial(true);
+    }),
+  );
+  await using screen = await render(
+    <RegistryContext.Provider value={registry}>
+      <Probe wantedPaths={["wanted.ts"]} />
+    </RegistryContext.Provider>,
+  );
+  expect(JSON.parse(screen.container.querySelector("output")!.textContent!)).toEqual({
+    loading: false,
+    files: [["wanted.ts", "FOUND"]],
+  });
+  expect(nextPageReads).toBe(0);
+});
