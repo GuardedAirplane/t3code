@@ -13,11 +13,13 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
+import * as Option from "effect/Option";
 import * as References from "effect/References";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as UrlParams from "effect/http/UrlParams";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
@@ -26,7 +28,11 @@ import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderS
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as ProviderMaintenance from "@t3tools/provider-core/server/maintenanceResolver";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
-import { OPENCODE_2_RESPONSES, replayOpenCodeServer } from "./probeResponses.fixture.ts";
+import {
+  OPENCODE_2_RESPONSES,
+  OPENCODE_2_WORKSPACE_RESPONSES,
+  replayOpenCodeServer,
+} from "./probeResponses.fixture.ts";
 import { OpenCodeDriver, openCodeUpdateFor } from "./driver.ts";
 import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
 
@@ -231,6 +237,88 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
         assert.strictEqual(modelReads, readsAfterRecovery);
         assert.strictEqual(discoveryLogs.length, 1);
       }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("lists a project's own opencode.jsonc models in that project's snapshot", () =>
+    Effect.gen(function* () {
+      const project = "/work/project-with-config";
+      const model = (providerID: string, id: string, name: string) => ({
+        id,
+        modelID: id,
+        providerID,
+        name,
+        package: "@opencode/ai/providers/openai-compatible",
+        settings: {},
+        compatibility: {},
+        capabilities: { tools: true, input: ["text"], output: ["text"] },
+        variants: [],
+        time: { released: 1789516800000 },
+        cost: [{ input: 0, output: 0, cache: { read: 0, write: 0 } }],
+        status: "active",
+        enabled: true,
+        limit: { context: 1000000, output: 65536 },
+      });
+      const machineModels = [model("opencode", "big-pickle", "Big Pickle")];
+      const projectModels = [
+        ...machineModels,
+        model("uni", "medium-gpt", "Medium GPT"),
+        model("uni", "large-gpt", "Large GPT"),
+      ];
+      const replay = replayOpenCodeServer(
+        { ...OPENCODE_2_RESPONSES, ...OPENCODE_2_WORKSPACE_RESPONSES },
+        "secret",
+      );
+      const server = HttpClient.make((request) => {
+        const pathname = new URL(request.url).pathname;
+        if (pathname !== "/api/model" && pathname !== "/api/provider") {
+          return replay.execute(request);
+        }
+        const directory = Option.getOrUndefined(
+          UrlParams.getFirst(request.urlParams, "location[directory]"),
+        );
+        const data =
+          pathname === "/api/provider" ? [] : directory === project ? projectModels : machineModels;
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            new Response(JSON.stringify({ location: { directory }, data }), {
+              headers: { "content-type": "application/json" },
+            }),
+          ),
+        );
+      });
+      const instance = yield* create(
+        { serverUrl: "http://127.0.0.1:4096", serverPassword: "secret" },
+        server,
+      );
+      const ready = yield* instance.snapshot.streamChanges.pipe(
+        Stream.filter((snapshot) => snapshot.status === "ready"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust("5 seconds");
+      yield* Fiber.join(ready);
+      // Catalog reads repeat until two agree, so let them settle on the test clock.
+      const snapshotFor = (cwd: string) =>
+        Effect.gen(function* () {
+          const read = yield* Effect.forkChild(instance.snapshotForCwd!(cwd));
+          yield* TestClock.adjust("5 seconds");
+          return yield* Fiber.join(read);
+        });
+
+      const projectSnapshot = yield* snapshotFor(project);
+      assert.deepStrictEqual(projectSnapshot.models.map((entry) => entry.slug).toSorted(), [
+        "opencode/big-pickle",
+        "uni/large-gpt",
+        "uni/medium-gpt",
+      ]);
+      const otherSnapshot = yield* snapshotFor("/work/other-project");
+      assert.deepStrictEqual(
+        otherSnapshot.models.map((entry) => entry.slug),
+        ["opencode/big-pickle"],
+      );
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
   it.effect("does not retry a rejected server password in the background", () =>
