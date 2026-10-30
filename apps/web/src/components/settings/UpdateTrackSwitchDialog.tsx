@@ -18,7 +18,7 @@ import {
   type ChannelSwitchRelease,
 } from "../sidebar/updateEverything.logic";
 import { isHostedByThisApp, useUpdateEverything } from "../sidebar/useUpdateEverything";
-import { prepareLocalTrackSwitch } from "./updateTrackSwitch.logic";
+import { nothingToMove, prepareLocalTrackSwitch } from "./updateTrackSwitch.logic";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -81,16 +81,15 @@ function SwitchPlan({
   const [checking, setChecking] = useState(false);
   const everything = useUpdateEverything(switchesLocal ? release.version : null, release);
   const label = channelSwitchLabel(release.channel);
-  // Skipped rows say why; track-only hosts are not rows but still get a request.
-  const movesNothing = !switchesLocal && everything.rows.every((row) => row.skipped !== null);
-  const savesNothing =
-    movesNothing &&
-    !everything.hasUpdates &&
-    (updateState?.channel ?? "latest") === release.channel;
-  const whyNothingMoves =
-    everything.rows.length === 0 && !crossesLocal
-      ? `Every connected machine is already on ${label}.`
-      : `No machine can switch to ${label} now.`;
+  const idle = nothingToMove({
+    label,
+    channel: release.channel,
+    savedChannel: updateState?.channel ?? "latest",
+    switchesLocal,
+    crossesLocal,
+    rows: everything.rows,
+    hasTargets: everything.hasUpdates,
+  });
   // This app's reinstall restarts every server it hosts, so each of their databases must allow it.
   const localBlocked = localSwitchBlockReason(
     APP_VERSION,
@@ -166,7 +165,7 @@ function SwitchPlan({
       providerCount={0}
       rows={everything.rows}
       notes={[
-        ...(movesNothing && !savesNothing ? [`${whyNothingMoves} This only saves the track.`] : []),
+        ...(idle.note === null ? [] : [idle.note]),
         ...(crossesLocal && updatesOff
           ? ["This app's updates are off here, so reinstall it yourself to switch."]
           : []),
@@ -180,9 +179,7 @@ function SwitchPlan({
       disabledReason={
         switchesLocal && localBlocked !== null
           ? `This app cannot switch: ${localBlocked}.`
-          : savesNothing
-            ? whyNothingMoves
-            : null
+          : idle.disabledReason
       }
       onConfirm={() => void run()}
     />
