@@ -379,14 +379,17 @@ export const make = Effect.gen(function* () {
           const project = projects.get(thread.projectId);
           if (project === undefined || thread.branch === null) return;
           // A worktree folder can outlive its .git, and git there fails with not_a_repository.
+          // An unreadable .git keeps the worktree, so git fails there and the thread is skipped.
           lookupCwdByThreadId.set(
             thread.id,
             thread.worktreePath !== null &&
-              (yield* fileSystem.exists(path.join(thread.worktreePath, ".git")))
+              (yield* fileSystem
+                .exists(path.join(thread.worktreePath, ".git"))
+                .pipe(Effect.orElseSucceed(() => true)))
               ? thread.worktreePath
               : project.workspaceRoot,
           );
-        }).pipe(Effect.ignore({ log: "Warn", message: "checking a thread worktree failed" })),
+        }),
       { concurrency: 8, discard: true },
     );
     if (mergedPullRequest !== null) {
@@ -494,7 +497,7 @@ export const make = Effect.gen(function* () {
       if (thread.branch === null) return null;
       const cwd = lookupCwdByThreadId.get(thread.id);
       if (cwd === undefined) {
-        return yield* Effect.die(new Error("thread lookup directory not resolved"));
+        return yield* Effect.die(new Error("thread project not found"));
       }
       const refresh = group.filter((member) => shellClosedThreads.delete(member.id)).length > 0;
       return yield* git.branchPullRequest({ cwd, branch: thread.branch }, { refresh });

@@ -938,7 +938,10 @@ describe("ThreadSettlementServiceV2 worker", () => {
           ]),
           existingWorktreePaths: ["/worktrees/readable", "/worktrees/readable/.git"],
           unreadablePaths: ["/worktrees/unreadable/.git"],
-          branchPullRequest: () => Effect.succeed(makeBranchPullRequest("merged")),
+          branchPullRequest: (input) =>
+            input.cwd === "/worktrees/unreadable"
+              ? Effect.die(new Error("git: permission denied"))
+              : Effect.succeed(makeBranchPullRequest("merged")),
         });
 
         yield* Effect.gen(function* () {
