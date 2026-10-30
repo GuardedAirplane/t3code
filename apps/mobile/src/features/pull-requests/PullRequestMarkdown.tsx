@@ -41,7 +41,11 @@ import type {
 const AutolinksContext = createContext<((text: string) => ReadonlyArray<ReferenceAutolink>) | null>(
   null,
 );
-const LinkResolverContext = createContext<((url: string) => string) | null>(null);
+/** `base` is the change request URL `resolve` reads relative destinations against. */
+const LinkResolverContext = createContext<{
+  readonly resolve: (url: string) => string;
+  readonly base: string;
+} | null>(null);
 
 export function PullRequestMarkdownRepository(props: {
   /** The change request the markdown belongs to, whose host decides what its text links. */
@@ -56,6 +60,7 @@ export function PullRequestMarkdownRepository(props: {
       ? null
       : changeRequestReferenceAutolinker({ provider, url });
   const resolveUrl = changeRequestLinkResolver(props.changeRequest);
+  const linkResolver = resolveUrl && url !== undefined ? { resolve: resolveUrl, base: url } : null;
   const target = pullRequestTarget(props.params);
   const project = useProject({
     environmentId: target.environmentId,
@@ -65,7 +70,7 @@ export function PullRequestMarkdownRepository(props: {
   const media = cwd ? { environmentId: target.environmentId, cwd } : null;
   return (
     <AutolinksContext value={autolinks}>
-      <LinkResolverContext value={resolveUrl}>
+      <LinkResolverContext value={linkResolver}>
         <PullRequestMediaContext value={media}>{props.children}</PullRequestMediaContext>
       </LinkResolverContext>
     </AutolinksContext>
@@ -74,8 +79,8 @@ export function PullRequestMarkdownRepository(props: {
 
 /**
  * Enriched draws an image in a table, list or link itself, from this source, not `renderImage`.
- * It keeps a resolved source for the life of the view, so `sourceKey` remounts it when the media
- * location or the origin that signs its URLs changes.
+ * It keeps a resolved source for the life of the view, so the view is keyed to everything an
+ * answer depends on: the change request it resolves against, the media location and the origin.
  */
 function usePullRequestImageSource(resolve: (url: string) => string): {
   readonly resolveImageSource: MarkdownImageSourceResolver;
@@ -168,11 +173,11 @@ function PullRequestMarkdownContent(props: {
   readonly imageGroupMarkdown?: string;
 }) {
   const autolinks = useContext(AutolinksContext);
-  const resolveUrl = useContext(LinkResolverContext);
+  const linkResolver = useContext(LinkResolverContext);
   const mediaContext = useContext(PullRequestMediaContext);
   const markdown = linkReferenceAutolinks(props.markdown, autolinks);
   const openPullRequest = useOpenPullRequest();
-  const resolve = (href: string) => resolveUrl?.(href) ?? href;
+  const resolve = (href: string) => linkResolver?.resolve(href) ?? href;
   const openLink = (href: string) => {
     void openPullRequest(resolve(href));
   };
@@ -191,11 +196,12 @@ function PullRequestMarkdownContent(props: {
     <MarkdownImage href={resolve(image.href)} alt={image.alt} onPreview={setPreview} />
   );
   const { resolveImageSource, sourceKey } = usePullRequestImageSource(resolve);
+  const nativeKey = `${linkResolver?.base ?? ""}\n${sourceKey}`;
   const styles = useMarkdownPreviewStyles();
   return (
     <FilePreviewGallery value={gallery}>
       <SelectableMarkdownText
-        key={sourceKey}
+        key={nativeKey}
         markdown={markdown}
         textStyle={styles.nativeTextStyle}
         onLinkPress={openLink}

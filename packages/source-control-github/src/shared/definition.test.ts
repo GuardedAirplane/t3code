@@ -171,7 +171,13 @@ describe("GitHub relative URLs", () => {
     expect(resolve("/other/r/blob/801d91ff/docs/shot.webp?raw=true")).toBe(
       "https://github.com/other/r/blob/801d91ff/docs/shot.webp?raw=true",
     );
-    for (const url of ["https://example.com/shot.png", "#x", "mailto:a@example.com"]) {
+    for (const url of [
+      "https://example.com/shot.png",
+      "#x",
+      "mailto:a@example.com",
+      "//evil.example/shot.png",
+      "\\\\evil.example\\shot.png",
+    ]) {
       expect(resolve(url), url).toBeNull();
     }
   });
