@@ -148,7 +148,7 @@ it.effect.each([
   {
     input: { deviceId: "missing", hostId: "local" },
     open: false,
-    message: "Device missing on host local is not open in this thread. Call device_open first.",
+    message: "Device missing is not open in this thread. Call device_open first.",
   },
   {
     input: {},
@@ -188,6 +188,7 @@ it.effect.each([
           Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
           Layer.provide(
             Layer.mock(DeviceService.DeviceService)({
+              locateSession: () => Effect.succeedNone,
               sessionsForThread: () =>
                 Effect.succeed(
                   open
