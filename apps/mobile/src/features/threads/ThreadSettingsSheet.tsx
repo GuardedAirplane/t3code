@@ -266,6 +266,7 @@ type ThreadSettingsSubmenuPage =
 type ThreadSettingsSessionProps = {
   readonly environmentId: EnvironmentId | null;
   readonly projectId: ProjectId | null;
+  readonly cwd: string | null;
   readonly providerInstanceId?: ProviderInstanceId;
   readonly lockedProviderInstanceId?: ProviderInstanceId;
   readonly providerGroups: ReadonlyArray<ProviderGroup>;
@@ -347,7 +348,7 @@ function ThreadSettingsSessionProvider(
     manageHidden && config
       ? groupByProvider(
           buildModelOptions(
-            config,
+            serverConfigForCwd(config, props.cwd),
             props.selectedModel,
             props.lockedProviderInstanceId,
             props.projectId,
@@ -1545,6 +1546,7 @@ export function ExistingThreadSettingsRouteScreen({
     <ThreadSettingsPickerScreen
       environmentId={selectedThread.environmentId}
       projectId={selectedThread.projectId}
+      cwd={selectedThreadCwd}
       providerInstanceId={modelSelection.instanceId}
       {...(lockedProviderInstanceId ? { lockedProviderInstanceId } : {})}
       providerGroups={groupByProvider(modelOptions)}
@@ -1582,6 +1584,7 @@ export function NewTaskThreadSettingsRouteScreen() {
     <ThreadSettingsPickerScreen
       environmentId={flow.selectedEnvironmentId}
       projectId={flow.selectedProject?.id ?? null}
+      cwd={flow.workspaceCwd}
       {...(flow.selectedModel ? { providerInstanceId: flow.selectedModel.instanceId } : {})}
       providerGroups={flow.providerGroups}
       selectedModel={flow.selectedModel}
