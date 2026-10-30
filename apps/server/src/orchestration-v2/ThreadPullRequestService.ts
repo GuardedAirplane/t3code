@@ -191,11 +191,9 @@ export const make = Effect.gen(function* () {
             });
           if (first.branch !== null && repository === null) return finishBackfill(group);
           // A worktree folder can outlive its .git, and git there fails with not_a_repository.
-          const worktreeIsRepository =
-            first.worktreePath !== null &&
-            (yield* fileSystem.exists(path.join(first.worktreePath, ".git")));
           const cwd =
-            worktreeIsRepository && first.worktreePath !== null
+            first.worktreePath !== null &&
+            (yield* fileSystem.exists(path.join(first.worktreePath, ".git")))
               ? first.worktreePath
               : project.workspaceRoot;
           const detected =
