@@ -1,6 +1,7 @@
 import {
   type EnvironmentId,
   isProviderWorkspaceSnapshotCurrent,
+  isProviderWorkspaceSnapshotPending,
   PROVIDER_WORKSPACE_SNAPSHOT_TTL_MS,
   type ProviderInstanceId,
   type ServerProvider,
@@ -102,7 +103,7 @@ export function hasCompleteProviderWorkspaceSnapshot(
   cwd: string | null | undefined,
 ): boolean {
   const snapshot = provider && resolveProviderWorkspaceSnapshot(provider, cwd);
-  return Boolean(snapshot && !snapshot.slashCommandsPending);
+  return Boolean(snapshot && !isProviderWorkspaceSnapshotPending(snapshot));
 }
 
 function hasCurrentProviderWorkspaceSnapshot(
@@ -113,7 +114,7 @@ function hasCurrentProviderWorkspaceSnapshot(
   const snapshot = provider && resolveProviderWorkspaceSnapshot(provider, cwd);
   return Boolean(
     snapshot &&
-    !snapshot.slashCommandsPending &&
+    !isProviderWorkspaceSnapshotPending(snapshot) &&
     isProviderWorkspaceSnapshotCurrent(snapshot, nowMs),
   );
 }
@@ -216,8 +217,8 @@ function planProviderWorkspaceSnapshotRefresh(
   if (refresh) {
     return { state: { ...state, requestedAt: now }, refresh: true, recheckAt: null };
   }
-  const pending =
-    (provider && resolveProviderWorkspaceSnapshot(provider, cwd)?.slashCommandsPending) === true;
+  const snapshot = provider && resolveProviderWorkspaceSnapshot(provider, cwd);
+  const pending = Boolean(snapshot && isProviderWorkspaceSnapshotPending(snapshot));
   return { state, refresh: false, recheckAt: pending ? retryNotBefore : null };
 }
 
@@ -251,7 +252,7 @@ function resolveWorkspaceSnapshotStatus(
 ): WorkspaceSnapshotStatus {
   const snapshot = provider && resolveProviderWorkspaceSnapshot(provider, cwd);
   if (!snapshot) return "absent";
-  return snapshot.slashCommandsPending ? "pending" : "complete";
+  return isProviderWorkspaceSnapshotPending(snapshot) ? "pending" : "complete";
 }
 
 interface ProviderWorkspaceSnapshotRefreshTarget {

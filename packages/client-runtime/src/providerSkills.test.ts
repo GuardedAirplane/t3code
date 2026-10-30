@@ -308,6 +308,22 @@ describe("provider workspace snapshot refresh atom", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("rescans a current snapshot whose commands are complete but models are pending", () => {
+    vi.useFakeTimers({ now: Date.parse("2026-01-01T00:00:00.000Z") });
+    const [current] = withSnapshot("2026-01-01T00:00:00.000Z");
+    const { run, unmount } = setup([
+      {
+        ...current!,
+        workspaceSnapshots: current!.workspaceSnapshots!.map((snapshot) => ({
+          ...snapshot,
+          modelsPending: true,
+        })),
+      },
+    ]);
+    expect(run).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
   it("stops retrying after three failed scans until the TTL lapses", async () => {
     vi.useFakeTimers({ now: Date.parse("2026-01-01T00:00:00.000Z") });
     const { registry, atom, run, unmount } = setup(withSnapshot("2026-01-01T00:00:00.000Z", true));

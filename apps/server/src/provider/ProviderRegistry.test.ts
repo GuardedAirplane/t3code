@@ -477,6 +477,52 @@ it.layer(
       assert.strictEqual(removed.workspaceSnapshots?.[0]?.models, undefined);
     });
 
+    it("drops folder catalogs when a machine refresh changes the machine models", () => {
+      const machineModel = {
+        slug: "opencode/big-pickle",
+        name: "Big Pickle",
+        isCustom: false,
+        capabilities: null,
+      } satisfies ServerProvider["models"][number];
+      const projectModel = { ...machineModel, slug: "uni/medium-gpt", name: "Medium GPT" };
+      const addedModel = { ...machineModel, slug: "opencode/new", name: "New" };
+      const provider = {
+        instanceId: ProviderInstanceId.make("opencode"),
+        driver: ProviderDriverKind.make("opencode"),
+        status: "ready",
+        enabled: true,
+        installed: true,
+        auth: { status: "authenticated" },
+        checkedAt: "2026-03-25T00:00:00.000Z",
+        version: "2.0.0",
+        models: [machineModel],
+        slashCommands: [],
+        skills: [],
+      } satisfies ServerProvider;
+      const withCatalog = ProviderRegistry.upsertProviderWorkspaceSnapshot(
+        ProviderRegistry.upsertProviderWorkspaceSnapshot(provider, "/project", {
+          ...provider,
+          workspaceModels: [machineModel, projectModel],
+        }),
+        "/plain",
+        provider,
+      );
+
+      const unchanged = ProviderRegistry.mergeProviderSnapshot(withCatalog, provider);
+      assert.deepStrictEqual(
+        unchanged.workspaceSnapshots?.map((snapshot) => snapshot.cwd),
+        ["/project", "/plain"],
+      );
+      const changed = ProviderRegistry.mergeProviderSnapshot(withCatalog, {
+        ...provider,
+        models: [machineModel, addedModel],
+      });
+      assert.deepStrictEqual(
+        changed.workspaceSnapshots?.map((snapshot) => snapshot.cwd),
+        ["/plain"],
+      );
+    });
+
     it("stores workspace skills, commands and options without changing machine metadata", () => {
       const provider = {
         instanceId: ProviderInstanceId.make("codex"),
@@ -1558,6 +1604,108 @@ it.layer(
           assert.deepStrictEqual(recovered?.skills, laterSkills);
           assert.deepStrictEqual(recovered?.slashCommands, [COMPACT_SLASH_COMMAND]);
           assert.strictEqual(recovered?.slashCommandsPending, undefined);
+        }).pipe(Effect.provide(runtimeServices));
+      }),
+    );
+
+    it.effect("rescans a folder whose model catalog could not be read before its TTL", () =>
+      Effect.gen(function* () {
+        const driver = ProviderDriverKind.make("opencode");
+        const instanceId = ProviderInstanceId.make("opencode");
+        const machineModel = {
+          slug: "opencode/big-pickle",
+          name: "Big Pickle",
+          isCustom: false,
+          capabilities: null,
+        } satisfies ServerProvider["models"][number];
+        const projectModel = { ...machineModel, slug: "uni/medium-gpt", name: "Medium GPT" };
+        const provider = {
+          instanceId,
+          driver,
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          checkedAt: "2026-06-10T00:00:00.000Z",
+          version: "2.0.0",
+          models: [machineModel],
+          slashCommands: [],
+          skills: [],
+        } as const satisfies ServerProvider;
+        const scanResult = yield* Ref.make<ProviderWorkspaceSnapshot>({
+          ...provider,
+          slashCommandsPending: false,
+          workspaceModelsPending: true,
+        });
+        const instance: ProviderInstance = {
+          instanceId,
+          driverKind: driver,
+          continuationIdentity: {
+            driverKind: driver,
+            continuationKey: "opencode:instance:opencode",
+          },
+          displayName: undefined,
+          enabled: true,
+          snapshot: {
+            resolveMaintenance: () =>
+              Effect.succeed(
+                makeManualOnlyProviderMaintenanceCapabilities({
+                  provider: driver,
+                  packageName: null,
+                }),
+              ),
+            getSnapshot: Effect.succeed(provider),
+            refresh: Effect.succeed(provider),
+            streamChanges: Stream.empty,
+            applyUsageLimits: () => Effect.void,
+          },
+          snapshotForCwd: () => Ref.get(scanResult),
+          orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+          textGeneration: {} as ProviderInstance["textGeneration"],
+        };
+        const layerInstanceRegistry = Layer.succeed(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          {
+            getInstance: (requestedId) =>
+              Effect.succeed(requestedId === instanceId ? instance : undefined),
+            listInstances: Effect.succeed([instance]),
+            listUnavailable: Effect.succeed([]),
+            streamChanges: Stream.empty,
+            subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), PubSub.subscribe),
+          },
+        );
+        const scope = yield* Scope.make();
+        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+        const runtimeServices = yield* Layer.build(
+          ProviderRegistry.layer.pipe(
+            Layer.provide(layerUnusedMutator),
+            Layer.provideMerge(layerInstanceRegistry),
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), {
+                prefix: "t3-provider-registry-pending-workspace-models-",
+              }),
+            ),
+            Layer.provideMerge(NodeServices.layer),
+          ),
+        ).pipe(Scope.provide(scope));
+
+        yield* Effect.gen(function* () {
+          const registry = yield* ProviderRegistry.ProviderRegistry;
+          const workspaceOf = Effect.map(
+            registry.getProviders,
+            (providers) => providers[0]?.workspaceSnapshots?.[0],
+          );
+          yield* registry.refreshWorkspaceSnapshot({ instanceId, cwd: "/project" });
+          const unread = yield* workspaceOf;
+          assert.strictEqual(unread?.models, undefined);
+          assert.strictEqual(unread?.modelsPending, true);
+
+          const workspaceModels = [machineModel, projectModel];
+          yield* Ref.set(scanResult, { ...provider, slashCommandsPending: false, workspaceModels });
+          yield* registry.refreshWorkspaceSnapshot({ instanceId, cwd: "/project" });
+          const recovered = yield* workspaceOf;
+          assert.deepStrictEqual(recovered?.models, workspaceModels);
+          assert.strictEqual(recovered?.modelsPending, undefined);
         }).pipe(Effect.provide(runtimeServices));
       }),
     );
