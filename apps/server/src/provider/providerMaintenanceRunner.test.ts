@@ -396,7 +396,15 @@ describe("providerMaintenanceRunner", () => {
     );
     assert.strictEqual(ProviderMaintenanceRunner.toProgressLine("x".repeat(300))?.length, 200);
 
-    for (const redraw of ["\r", "\u001b[G", "\u001b[0G", "\u001b[1G", "\u001b[01G"]) {
+    for (const redraw of [
+      "\r",
+      "\u001b[G",
+      "\u001b[0G",
+      "\u001b[1G",
+      "\u001b[01G",
+      "\u001b[999D",
+      "\u001b[999D\u001b[J",
+    ]) {
       const output = `first${redraw}second${redraw}last`;
       for (let boundary = 0; boundary <= output.length; boundary++) {
         let partialLine = "";

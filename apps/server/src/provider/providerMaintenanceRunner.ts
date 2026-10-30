@@ -203,7 +203,7 @@ export function splitOutputLines(
   partialLine: string,
   text: string,
 ): { readonly lines: ReadonlyArray<string>; readonly partialLine: string } {
-  const parts = (partialLine + text).replace(/\x1b\[0*1?G/g, "\r").split(/\r\n|\r|\n/);
+  const parts = (partialLine + text).replace(/\x1b\[(?:0*1?G|999D)/g, "\r").split(/\r\n|\r|\n/);
   return { partialLine: (parts.pop() ?? "").slice(-UPDATE_PARTIAL_LINE_MAX_LENGTH), lines: parts };
 }
 
