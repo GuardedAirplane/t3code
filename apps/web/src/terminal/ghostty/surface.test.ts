@@ -406,7 +406,7 @@ describe("GhosttyTerminalSurface visibility", () => {
 
     key(surface, "v", "KeyV", { metaKey: true });
     if (first === "native") paste(surface, "echo hi");
-    await read;
+    await vi.runAllTimersAsync();
     if (first === "clipboard") paste(surface, "echo hi");
 
     expect(harness.onData.mock.calls).toEqual([["echo hi"]]);
@@ -439,7 +439,7 @@ describe("GhosttyTerminalSurface visibility", () => {
       const surface = await harness.create({ beforeKey: () => true });
 
       key(surface, "v", "KeyV", { metaKey: true });
-      await read;
+      await vi.runAllTimersAsync();
       expect(harness.onData.mock.calls).toEqual([["echo hi"]]);
       if (end === "blur") surface.input.dispatchEvent(new Event("blur"));
       else if (end === "V keyup") key(surface, "v", "KeyV", { metaKey: true }, "keyup");
