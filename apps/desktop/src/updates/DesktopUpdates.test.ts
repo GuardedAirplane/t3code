@@ -558,6 +558,71 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  // regression: #27486 a silent NSIS update on a full volume left a half-written install that no longer launched
+  it.effect("keeps a Windows update retryable when the install volume lacks space", () => {
+    const megabyte = 1024 * 1024;
+    const harness = makeHarness({
+      platform: "win32",
+      diskSpace: {
+        freeBytes: 200 * megabyte,
+        installerBytes: 150 * megabyte,
+        installDirectoryBytes: 400 * megabyte,
+      },
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const desktopState = yield* DesktopState.DesktopState;
+        const pool = yield* DesktopBackendPool.DesktopBackendPool;
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", {
+          version: "1.2.4",
+          downloadedFile: "C:\\Users\\me\\AppData\\Local\\t3code-updater\\pending\\installer.exe",
+        });
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+        assert.equal(harness.quitAndInstalls(), 0, "the installer ran without enough disk space");
+        assert.isFalse(yield* Ref.get(desktopState.quitting));
+        assert.isTrue((yield* (yield* pool.primary).snapshot).desiredRunning);
+        assert.isFalse(result.completed);
+        assert.equal(result.state.status, "downloaded");
+        assert.equal(result.state.downloadedVersion, "1.2.4");
+        assert.equal(result.state.errorContext, "install");
+        assert.isTrue(result.state.canRetry);
+        assert.match(result.state.message ?? "", /space/i);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("installs a Windows update when the install volume has room", () => {
+    const megabyte = 1024 * 1024;
+    const harness = makeHarness({
+      platform: "win32",
+      diskSpace: {
+        freeBytes: 2000 * megabyte,
+        installerBytes: 150 * megabyte,
+        installDirectoryBytes: 400 * megabyte,
+      },
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", {
+          version: "1.2.4",
+          downloadedFile: "C:\\Users\\me\\AppData\\Local\\t3code-updater\\pending\\installer.exe",
+        });
+        yield* flushCallbacks;
+
+        assert.isTrue((yield* updates.install).accepted);
+        assert.equal(harness.quitAndInstalls(), 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect("restores only desired-running instances after an installer error event", () => {
     const starts: string[] = [];
     const stops: string[] = [];

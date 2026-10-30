@@ -40,6 +40,12 @@ export interface UpdatesHarnessOptions {
   readonly savedChannel?: DesktopAppSettings.DesktopSettings["updateChannel"];
   /** Adds a WSL backend beside the primary, as on a Windows host with WSL enabled. */
   readonly wslBackend?: boolean;
+  /** Sizes a Windows install preflight sees: free bytes on the install volume, the downloaded installer, and the install folder. */
+  readonly diskSpace?: {
+    readonly freeBytes: number;
+    readonly installerBytes: number;
+    readonly installDirectoryBytes: number;
+  };
 }
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
