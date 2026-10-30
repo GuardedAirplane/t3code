@@ -38,13 +38,15 @@ describe("HtmlRenderDocument", () => {
 
   it("cancels clicks on non-web links so the report is not navigated away", async () => {
     const html = injectHtmlRenderBootstrap(`<!doctype html><html><head><style>
-      a { position: fixed; left: 0; right: 0; height: 25vh; display: block; }
-      #thread { top: 0; } #mail { top: 25vh; } #download { top: 50vh; } #script { top: 75vh; }
+      a { position: fixed; left: 0; right: 0; height: 20vh; display: block; }
+      #thread { top: 0; } #mail { top: 20vh; } #download { top: 40vh; } #script { top: 60vh; }
+      #thread-download { top: 80vh; }
     </style></head><body>
       <a id="thread" href="t3-thread://v2/environment-1/thread-1">Open owner</a>
       <a id="mail" href="mailto:someone@example.com">Mail owner</a>
       <a id="download" href="data:text/plain,report" download="report.txt">Download</a>
       <a id="script" href="javascript:void(0)">Run</a>
+      <a id="thread-download" href="t3-thread://v2/environment-1/thread-2" download>Open other</a>
     <script>
       document.addEventListener("click", function(event) {
         var link = event.target.closest("a");
@@ -76,7 +78,7 @@ describe("HtmlRenderDocument", () => {
     await ready;
 
     const frame = screen.getByTitle("Links");
-    for (const y of [25, 75, 125, 175]) {
+    for (const y of [20, 60, 100, 140, 180]) {
       await userEvent.click(frame, { position: { x: 200, y } });
     }
 
@@ -86,6 +88,7 @@ describe("HtmlRenderDocument", () => {
         { type: "link-click", id: "mail", defaultPrevented: true },
         { type: "link-click", id: "download", defaultPrevented: false },
         { type: "link-click", id: "script", defaultPrevented: false },
+        { type: "link-click", id: "thread-download", defaultPrevented: true },
       ]),
     );
   });
