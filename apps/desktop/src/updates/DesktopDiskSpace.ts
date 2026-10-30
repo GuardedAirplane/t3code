@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- FileSystem has no statfs, and its stat follows symlinks.
-import * as NodeFSP from "node:fs/promises";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as Context from "effect/Context";
@@ -9,10 +10,14 @@ import * as Schema from "effect/Schema";
 
 const MAX_DIRECTORY_ENTRIES = 100_000;
 
+// Electron's fs reports .asar archives as empty directories; original-fs sees the real files.
+const NodeFSP = ((process.getBuiltinModule("original-fs") as typeof NodeFS | undefined) ?? NodeFS)
+  .promises;
+
 export class DesktopDiskSpaceError extends Schema.TaggedError<DesktopDiskSpaceError>()(
   "DesktopDiskSpaceError",
   {
-    operation: Schema.Literals(["freeBytes", "directoryBytes"]),
+    operation: Schema.Literals(["tempFreeBytes", "directoryBytes"]),
     cause: Schema.Defect(),
   },
 ) {
@@ -24,8 +29,8 @@ export class DesktopDiskSpaceError extends Schema.TaggedError<DesktopDiskSpaceEr
 export class DesktopDiskSpace extends Context.Service<
   DesktopDiskSpace,
   {
-    /** Bytes the current user can still write on the volume holding `path`. */
-    readonly freeBytes: (path: string) => Effect.Effect<number, DesktopDiskSpaceError>;
+    /** Bytes the current user can still write on the volume holding the temp directory. */
+    readonly tempFreeBytes: Effect.Effect<number, DesktopDiskSpaceError>;
     /** Total size of the regular files below `path`, without following symlinks. */
     readonly directoryBytes: (path: string) => Effect.Effect<number, DesktopDiskSpaceError>;
   }
@@ -61,13 +66,13 @@ async function sumDirectoryBytes(root: string): Promise<number> {
 }
 
 export const layer = Layer.succeed(DesktopDiskSpace, {
-  freeBytes: Effect.fn("DesktopDiskSpace.freeBytes")(function* (path: string) {
-    const stats = yield* Effect.tryPromise({
-      try: () => NodeFSP.statfs(path),
-      catch: (cause) => new DesktopDiskSpaceError({ operation: "freeBytes", cause }),
-    });
-    return stats.bavail * stats.bsize;
-  }),
+  tempFreeBytes: Effect.tryPromise({
+    try: () => NodeFSP.statfs(NodeOS.tmpdir()),
+    catch: (cause) => new DesktopDiskSpaceError({ operation: "tempFreeBytes", cause }),
+  }).pipe(
+    Effect.map((stats) => stats.bavail * stats.bsize),
+    Effect.withSpan("DesktopDiskSpace.tempFreeBytes"),
+  ),
   directoryBytes: Effect.fn("DesktopDiskSpace.directoryBytes")(function* (path: string) {
     return yield* Effect.tryPromise({
       try: () => sumDirectoryBytes(path),

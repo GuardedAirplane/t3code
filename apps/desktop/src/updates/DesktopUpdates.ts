@@ -341,6 +341,8 @@ function getAutoUpdateDisabledReason(args: {
 }
 
 const MEGABYTE = 1024 * 1024;
+// Covers cluster rounding and a release that grows; refusing is recoverable, a partial install is not.
+const INSTALL_SPACE_MARGIN_BYTES = 128 * MEGABYTE;
 
 function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean {
   return runtimeInfo.hostArch === "arm64" && runtimeInfo.appArch === "x64";
@@ -717,8 +719,9 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  // A silent NSIS update that runs out of space leaves an install that no longer launches. It needs
-  // the installer, plus the package staged in $PLUGINSDIR and copied into the install folder.
+  // NSIS deletes the old install before staging its package in %TEMP% and copying it in, so the
+  // %TEMP% volume peaks near installer + install folder.
+  // A separate install volume only needs about new - old, so it is not checked.
   const findInstallSpaceShortfall = Effect.fn("desktop.updates.findInstallSpaceShortfall")(
     function* () {
       if (environment.platform !== "win32") return Option.none<string>();
@@ -727,27 +730,29 @@ export const make = Effect.gen(function* () {
         yield* logUpdaterWarning("skipping the install disk space check without an installer path");
         return Option.none<string>();
       }
-      const installDirectory = environment.path.dirname(environment.resourcesPath);
       return yield* Effect.all({
-        freeBytes: diskSpace.freeBytes(installDirectory),
+        freeBytes: diskSpace.tempFreeBytes,
         installerBytes: fileSystem
           .stat(installer.value)
           .pipe(Effect.map((info) => Number(info.size))),
-        installDirectoryBytes: diskSpace.directoryBytes(installDirectory),
-      }).pipe(
-        Effect.flatMap(
-          Effect.fnUntraced(function* ({ freeBytes, installerBytes, installDirectoryBytes }) {
-            const requiredBytes = installerBytes + 2 * installDirectoryBytes;
-            if (freeBytes >= requiredBytes) return Option.none<string>();
-            yield* logUpdaterWarning("not enough disk space to install the update", {
-              freeBytes,
-              requiredBytes,
-            });
-            return Option.some(
-              `Not enough disk space to install the update: needs about ${Math.ceil(requiredBytes / MEGABYTE)} MB free on the install drive, ${Math.floor(freeBytes / MEGABYTE)} MB available.`,
-            );
-          }),
+        installDirectoryBytes: diskSpace.directoryBytes(
+          environment.path.dirname(environment.resourcesPath),
         ),
+      }).pipe(
+        Effect.flatMap(({ freeBytes, installerBytes, installDirectoryBytes }) => {
+          const requiredBytes = installerBytes + installDirectoryBytes + INSTALL_SPACE_MARGIN_BYTES;
+          if (freeBytes >= requiredBytes) return Effect.succeed(Option.none<string>());
+          return logUpdaterWarning("not enough disk space to install the update", {
+            freeBytes,
+            requiredBytes,
+          }).pipe(
+            Effect.as(
+              Option.some(
+                `Not enough disk space to install the update: needs about ${Math.ceil(requiredBytes / MEGABYTE)} MB free, ${Math.floor(freeBytes / MEGABYTE)} MB available.`,
+              ),
+            ),
+          );
+        }),
         Effect.catch((error) =>
           logUpdaterWarning("could not check disk space before installing the update", {
             errorTag: error._tag,
