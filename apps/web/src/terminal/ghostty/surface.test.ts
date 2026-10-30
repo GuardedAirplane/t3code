@@ -412,6 +412,21 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(harness.onData.mock.calls).toEqual([["echo hi"]]);
   });
 
+  it("does not read the clipboard when the shortcut's native paste arrives", async () => {
+    const harness = createHarness();
+    const readText = vi.fn(() => Promise.resolve("echo hi"));
+    vi.stubGlobal("navigator", { platform: "Linux x86_64", clipboard: { readText } });
+    const surface = await harness.create({ beforeKey: () => true });
+
+    key(surface, "V", "KeyV", { ctrlKey: true, shiftKey: true });
+    paste(surface, "echo hi");
+    await vi.runAllTimersAsync();
+
+    // Firefox and Safari open a paste prompt on readText for another origin's clipboard.
+    expect(readText).not.toHaveBeenCalled();
+    expect(harness.onData.mock.calls).toEqual([["echo hi"]]);
+  });
+
   it.each(["V keyup", "blur", "Meta keyup without V keyup"])(
     "accepts a later identical menu paste after %s",
     async (end) => {
