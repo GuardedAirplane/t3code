@@ -69,10 +69,11 @@ const CliFailure = Schema.Struct({
   }),
 });
 const responseLine = (details: unknown) =>
-  typeof details === "object" && details !== null && "line" in details
-    ? typeof details.line === "string"
-      ? details.line
-      : undefined
+  typeof details === "object" &&
+  details !== null &&
+  "line" in details &&
+  typeof details.line === "string"
+    ? details.line
     : undefined;
 const decodeCliFailure = Schema.decodeUnknownOption(Schema.fromJsonString(CliFailure));
 const describeCliFailure = ({ error }: typeof CliFailure.Type) => {
