@@ -665,6 +665,25 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("installs a Windows update when disk space cannot be measured", () => {
+    const harness = makeHarness({ platform: "win32" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", {
+          version: "1.2.4",
+          downloadedFile: "C:\\Users\\me\\AppData\\Local\\t3code-updater\\pending\\installer.exe",
+        });
+        yield* flushCallbacks;
+
+        yield* updates.install;
+        assert.equal(harness.quitAndInstalls(), 1, "an unmeasured volume blocked the update");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect("restores only desired-running instances after an installer error event", () => {
     const starts: string[] = [];
     const stops: string[] = [];
