@@ -491,7 +491,7 @@ describe("connection onboarding", () => {
     const saveError = new Persistence.ConnectionPersistenceError({
       operation: "register-connection",
       message:
-        "Could not register connection: T3 Code could not encrypt saved connections because no system keyring is available or unlocked. On Linux, start and unlock a Secret Service keyring such as GNOME Keyring or KWallet, then restart T3 Code.",
+        "Could not register connection: ConnectionTransientError: Could not save the local connection catalog: No unlocked keyring. Unlock GNOME Keyring or KWallet, then restart T3 Code.",
     });
     return Effect.gen(function* () {
       const onboarding = yield* Onboarding.ConnectionOnboarding;
