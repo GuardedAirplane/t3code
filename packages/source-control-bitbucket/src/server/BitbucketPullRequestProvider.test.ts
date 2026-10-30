@@ -178,6 +178,51 @@ it.effect("reads checks and PR state without diff, mergeability, or permission r
   }),
 );
 
+it.effect("rereads only the pull request when sync reads an unchanged pull request again", () =>
+  Effect.gen(function* () {
+    const pullRequest = Result.getOrThrow(
+      decodePullRequestJson(`{
+      "id": 1, "title": "Sync", "state": "OPEN",
+      "source": { "branch": { "name": "feature" }, "commit": { "hash": "abc123" } },
+      "destination": { "branch": { "name": "main" } },
+      "created_on": "2026-09-16T00:00:00Z", "updated_on": "2026-09-16T00:00:00Z",
+      "links": { "html": { "href": "https://bitbucket.org/acme/web/pull-requests/1" } }
+    }`),
+    );
+    const calls: Array<string> = [];
+    const provider = yield* make.pipe(
+      Effect.provide(
+        Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({
+          getPullRequest: () =>
+            Effect.sync(() => calls.push("pullRequest")).pipe(Effect.as(pullRequest)),
+          getDiffStat: () =>
+            Effect.sync(() => calls.push("diffstat")).pipe(
+              Effect.as({ additions: 12, deletions: 3, changedFiles: 2 }),
+            ),
+          getMergeability: () =>
+            Effect.sync(() => calls.push("conflicts")).pipe(Effect.as("conflicting" as const)),
+          listChecks: () => Effect.sync(() => calls.push("statuses")).pipe(Effect.as([])),
+          getRepositoryPermission: () =>
+            Effect.sync(() => calls.push("permission")).pipe(Effect.as(true)),
+        }),
+      ),
+    );
+    const readSummary = provider.getChangeRequestSummary ?? provider.getChangeRequest;
+    const input = { cwd: "/repo", repository: "acme/web", host: "bitbucket.org", number: 1 };
+    const expected = { additions: 12, deletions: 3, changedFiles: 2, mergeability: "conflicting" };
+
+    expect(yield* readSummary(input)).toMatchObject(expected);
+    const firstRead = calls.splice(0).toSorted();
+    expect(yield* readSummary(input)).toMatchObject(expected);
+    const secondRead = calls.splice(0).toSorted();
+
+    expect({ firstRead, secondRead }).toEqual({
+      firstRead: ["conflicts", "diffstat", "pullRequest"],
+      secondRead: ["pullRequest"],
+    });
+  }),
+);
+
 describe("bitbucketProviderFailure", () => {
   it("treats only an HTTP 401 as unusable credentials", () => {
     const responseError = (status: number) =>
