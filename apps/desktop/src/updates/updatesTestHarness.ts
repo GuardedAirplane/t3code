@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { DesktopUpdateState } from "@t3tools/contracts";
+import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as PlatformError from "effect/PlatformError";
@@ -13,6 +14,7 @@ import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import * as DesktopDiskSpace from "./DesktopDiskSpace.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
 
 export const flushCallbacks = Effect.yieldNow;
@@ -239,6 +241,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         } satisfies DesktopAppSettings.DesktopAppSettings["Service"])
       : DesktopAppSettings.layer;
 
+  const diskSpace = options.diskSpace;
   const updateRestartMarkers = new Set<string>();
   const installRecords = new Map<string, string>();
   let previousInstallRecord = options.installRecord;
@@ -261,6 +264,14 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
             }),
           );
     },
+    ...(diskSpace === undefined
+      ? {}
+      : {
+          stat: () =>
+            Effect.succeed({
+              size: ByteSize.bytes(diskSpace.installerBytes),
+            } as FileSystem.File.Info),
+        }),
     makeDirectory: () => Effect.void,
     writeFileString: (path, data) =>
       Effect.sync(() => {
@@ -275,8 +286,20 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       }),
   });
 
+  const unmeasured = (operation: DesktopDiskSpace.DesktopDiskSpaceError["operation"]) =>
+    Effect.fail(new DesktopDiskSpace.DesktopDiskSpaceError({ operation, cause: "unmeasured" }));
+  const layerDiskSpace = Layer.succeed(DesktopDiskSpace.DesktopDiskSpace, {
+    freeBytes: () =>
+      diskSpace === undefined ? unmeasured("freeBytes") : Effect.succeed(diskSpace.freeBytes),
+    directoryBytes: () =>
+      diskSpace === undefined
+        ? unmeasured("directoryBytes")
+        : Effect.succeed(diskSpace.installDirectoryBytes),
+  } satisfies DesktopDiskSpace.DesktopDiskSpace["Service"]);
+
   const layer = DesktopUpdates.layer.pipe(
     Layer.provide(layerFileSystem),
+    Layer.provide(layerDiskSpace),
     Layer.provideMerge(layerUpdater),
     Layer.provideMerge(layerWindow),
     Layer.provideMerge(layerBackend),
