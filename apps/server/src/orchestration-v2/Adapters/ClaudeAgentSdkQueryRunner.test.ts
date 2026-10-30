@@ -175,7 +175,11 @@ it.effect("forked Claude sessions keep their compaction chain", () =>
         readonly subtype?: string;
         readonly compactMetadata?: {
           readonly preservedSegment: Record<"headUuid" | "anchorUuid" | "tailUuid", string>;
-          readonly preservedMessages: { readonly anchorUuid: string; readonly uuids: string[] };
+          readonly preservedMessages: {
+            readonly anchorUuid: string;
+            readonly uuids: string[];
+            readonly allUuids: string[];
+          };
         };
       }> = (yield* fileSystem.readFileString(path.join(projectDir, `${forked.sessionId}.jsonl`)))
         .trim()
@@ -189,6 +193,7 @@ it.effect("forked Claude sessions keep their compaction chain", () =>
         ...Object.values(preservedSegment),
         preservedMessages.anchorUuid,
         ...preservedMessages.uuids,
+        ...preservedMessages.allUuids,
       ].filter((ref) => !forkedUuids.has(ref));
       assert.deepEqual(danglingRefs, [], "compaction refs missing from the forked transcript");
     }).pipe(Effect.provide(forkRunnerLayer)),
