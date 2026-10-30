@@ -191,9 +191,12 @@ export const make = Effect.gen(function* () {
             });
           if (first.branch !== null && repository === null) return finishBackfill(group);
           // A worktree folder can outlive its .git, and git there fails with not_a_repository.
+          // An unreadable .git keeps the worktree rather than failing the whole group.
           const cwd =
             first.worktreePath !== null &&
-            (yield* fileSystem.exists(path.join(first.worktreePath, ".git")))
+            (yield* fileSystem
+              .exists(path.join(first.worktreePath, ".git"))
+              .pipe(Effect.orElseSucceed(() => true)))
               ? first.worktreePath
               : project.workspaceRoot;
           const detected =
