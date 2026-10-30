@@ -68,3 +68,33 @@ it.each([
   await act(() => registry.set(first, AsyncResult.success(page("wanted.ts", "FRESH", null))));
   expect(result()).toEqual({ loading: false, files: [["wanted.ts", "FRESH"]] });
 });
+
+it("walks more cached pages than React's re-render limit to reach the requested file", async () => {
+  state.pages.clear();
+  await using stack = new AsyncDisposableStack();
+  const registry = stack.adopt(AtomRegistry.make(), (value) => value.dispose());
+  const pageCount = 30;
+  for (let index = 0; index < pageCount; index++) {
+    const last = index === pageCount - 1;
+    state.pages.set(
+      index === 0 ? null : `cursor-${index}`,
+      Atom.make<AsyncResult.AsyncResult<PullRequestDiffResult>>(
+        AsyncResult.success(
+          page(
+            last ? "wanted.ts" : `file-${index}.ts`,
+            "FOUND",
+            last ? null : `cursor-${index + 1}`,
+          ),
+        ),
+      ),
+    );
+  }
+  await using screen = await render(
+    <RegistryContext.Provider value={registry}>
+      <Probe wantedPaths={["wanted.ts"]} />
+    </RegistryContext.Provider>,
+  );
+  const result = JSON.parse(screen.container.querySelector("output")!.textContent!);
+  expect(result.loading).toBe(false);
+  expect(result.files).toContainEqual(["wanted.ts", "FOUND"]);
+});
