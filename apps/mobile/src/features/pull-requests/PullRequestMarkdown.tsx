@@ -74,11 +74,12 @@ export function PullRequestMarkdownRepository(props: {
 
 /**
  * Enriched draws an image in a table, list or link itself, from this source, not `renderImage`.
- * It keeps a resolved source for the life of the view, so `origin` keys the view to the signed URLs.
+ * It keeps a resolved source for the life of the view, so `sourceKey` remounts it when the media
+ * location or the origin that signs its URLs changes.
  */
 function usePullRequestImageSource(resolve: (url: string) => string): {
   readonly resolveImageSource: MarkdownImageSourceResolver;
-  readonly origin: string | null;
+  readonly sourceKey: string;
 } {
   const location = useContext(PullRequestMediaContext);
   const connection = usePreparedConnection(location?.environmentId ?? null);
@@ -98,7 +99,10 @@ function usePullRequestImageSource(resolve: (url: string) => string): {
     if (state._tag !== "Success") throw new Error("Pull request image is unavailable");
     return { uri: state.url };
   };
-  return { resolveImageSource, origin: httpBaseUrl };
+  return {
+    resolveImageSource,
+    sourceKey: `${location?.environmentId ?? ""}\n${location?.cwd ?? ""}\n${httpBaseUrl ?? ""}`,
+  };
 }
 
 function MarkdownImage(props: {
@@ -186,12 +190,12 @@ function PullRequestMarkdownContent(props: {
   const renderImage: MarkdownImageRenderer = (image) => (
     <MarkdownImage href={resolve(image.href)} alt={image.alt} onPreview={setPreview} />
   );
-  const { resolveImageSource, origin } = usePullRequestImageSource(resolve);
+  const { resolveImageSource, sourceKey } = usePullRequestImageSource(resolve);
   const styles = useMarkdownPreviewStyles();
   return (
     <FilePreviewGallery value={gallery}>
       <SelectableMarkdownText
-        key={origin}
+        key={sourceKey}
         markdown={markdown}
         textStyle={styles.nativeTextStyle}
         onLinkPress={openLink}

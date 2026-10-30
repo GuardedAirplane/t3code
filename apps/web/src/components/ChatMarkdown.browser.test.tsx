@@ -170,7 +170,7 @@ it("resolves destinations in parsed html and reference links, but not code", asy
   await expect
     .element(screen.getByRole("link", { name: "ref" }))
     .toHaveAttribute("href", "https://github.com/team/repo/blob/abc/ref.md");
-  expect(screen.container.querySelector("code")?.textContent).toBe("![c](../blob/abc/c.png)");
+  await expect.element(screen.getByText("![c](../blob/abc/c.png)", { exact: true })).toBeVisible();
 });
 
 describe("ChatMarkdown favicon privacy", () => {
