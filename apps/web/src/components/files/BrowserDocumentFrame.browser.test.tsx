@@ -53,16 +53,17 @@ describe("HtmlRenderDocument", () => {
     const src = URL.createObjectURL(new Blob([html], { type: "text/html" }));
     using _url = { [Symbol.dispose]: () => URL.revokeObjectURL(src) };
     const clicks: Array<{ id: string; defaultPrevented: boolean }> = [];
-    const ready = Promise.withResolvers<void>();
     const messages = new AbortController();
     using _messages = { [Symbol.dispose]: () => messages.abort() };
-    window.addEventListener(
-      "message",
-      (event) => {
-        if (event.data?.type === "ready") ready.resolve();
-        if (event.data?.type === "link-click") clicks.push(event.data);
-      },
-      { signal: messages.signal },
+    const ready = new Promise<void>((resolve) =>
+      window.addEventListener(
+        "message",
+        (event) => {
+          if (event.data?.type === "ready") resolve();
+          if (event.data?.type === "link-click") clicks.push(event.data);
+        },
+        { signal: messages.signal },
+      ),
     );
     await using screen = await render(
       <>
@@ -70,7 +71,7 @@ describe("HtmlRenderDocument", () => {
         <HtmlRenderDocument src={src} title="Links" onContentHeight={() => {}} />
       </>,
     );
-    await ready.promise;
+    await ready;
 
     const frame = screen.getByTitle("Links");
     await userEvent.click(frame, { position: { x: 200, y: 50 } });
