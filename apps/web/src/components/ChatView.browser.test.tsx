@@ -48,7 +48,10 @@ it("a new draft does not load its reserved thread before the server lists it", a
 
   const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
   await router.load();
-  await using _app = await render(<AppRoot router={router} />, { router: false });
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
   await expect.element(page.getByTestId("composer-editor")).toBeVisible();
   // The shell snapshot has arrived once the sidebar lists the project, so the connection is up.
   await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
