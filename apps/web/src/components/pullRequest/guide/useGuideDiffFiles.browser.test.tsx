@@ -6,7 +6,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { act, render } from "../../../../test/render";
 
 const state = vi.hoisted(() => ({
-  pages: new Map<string | null, Atom.Writable<AsyncResult.AsyncResult<PullRequestDiffResult>>>(),
+  pages: new Map<string | null, Atom.Atom<AsyncResult.AsyncResult<PullRequestDiffResult>>>(),
 }));
 vi.mock("~/state/pullRequests", () => ({
   pullRequestEnvironment: {
@@ -127,4 +127,40 @@ it("does not request the next page once the requested file is loaded", async () 
     files: [["wanted.ts", "FOUND"]],
   });
   expect(nextPageReads).toBe(0);
+});
+
+it("waits for a later cached page that is still refreshing", async () => {
+  state.pages.clear();
+  await using stack = new AsyncDisposableStack();
+  const registry = stack.adopt(AtomRegistry.make(), (value) => value.dispose());
+  state.pages.set(
+    null,
+    Atom.make<AsyncResult.AsyncResult<PullRequestDiffResult>>(
+      AsyncResult.success(page("first.ts", "FIRST", "cursor-1")),
+    ),
+  );
+  const second = Atom.make<AsyncResult.AsyncResult<PullRequestDiffResult>>(
+    AsyncResult.success(page("other.ts", "STALE", "old-next"), { waiting: true }),
+  );
+  state.pages.set("cursor-1", second);
+  state.pages.set(
+    "old-next",
+    Atom.make<AsyncResult.AsyncResult<PullRequestDiffResult>>(AsyncResult.initial(true)),
+  );
+  await using screen = await render(
+    <RegistryContext.Provider value={registry}>
+      <Probe wantedPaths={["wanted.ts"]} />
+    </RegistryContext.Provider>,
+  );
+  const result = () => JSON.parse(screen.container.querySelector("output")!.textContent!);
+  expect(result()).toEqual({ loading: true, files: [["first.ts", "FIRST"]] });
+
+  await act(() => registry.set(second, AsyncResult.success(page("wanted.ts", "FRESH", null))));
+  expect(result()).toEqual({
+    loading: false,
+    files: [
+      ["first.ts", "FIRST"],
+      ["wanted.ts", "FRESH"],
+    ],
+  });
 });
