@@ -10712,17 +10712,25 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         pdfReservation.commit();
                       }),
                     ),
+                    Effect.tap(() =>
+                      Ref.update(steeredTurns, (current) => {
+                        const next = new Set(current);
+                        next.add(turnInput.providerTurnId);
+                        return next;
+                      }),
+                    ),
+                    // Eligibility survives older abort results and overlapping steers.
+                    Effect.tap(() =>
+                      Effect.sync(() => {
+                        for (const [toolUseId, state] of currentTurn.rootCommands) {
+                          if (state === "foreground") {
+                            currentTurn.rootCommands.set(toolUseId, "steered");
+                          }
+                        }
+                      }),
+                    ),
                   ),
                 );
-                yield* Ref.update(steeredTurns, (current) => {
-                  const next = new Set(current);
-                  next.add(turnInput.providerTurnId);
-                  return next;
-                });
-                // Eligibility survives older abort results and overlapping steers.
-                for (const [toolUseId, state] of currentTurn.rootCommands) {
-                  if (state === "foreground") currentTurn.rootCommands.set(toolUseId, "steered");
-                }
                 return [...currentTurn.rootCommands.keys()];
               }),
             );
