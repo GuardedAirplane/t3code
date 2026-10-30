@@ -404,7 +404,7 @@ export function makeCatalogBackend(database: DatabaseHandle): CatalogBackend {
               : Effect.fail(
                   catalogError(
                     "save",
-                    "Desktop secure storage is unavailable in this system context.",
+                    "T3 Code could not encrypt saved connections because no system keyring is available or unlocked. On Linux, start and unlock a Secret Service keyring such as GNOME Keyring or KWallet, then restart T3 Code.",
                   ),
                 ),
           ),
@@ -636,6 +636,9 @@ export const layer = Layer.effectContext(
       ),
     });
     const registrationStore = Persistence.ConnectionRegistrationStore.of({
+      assertWritable: catalog
+        .update((document) => document)
+        .pipe(Effect.mapError((cause) => persistenceError("register-connection", cause))),
       register: Effect.fn("Persistence.ConnectionRegistrationStore.register")(
         function (registration, routes) {
           return catalog

@@ -96,6 +96,27 @@ describe("ConnectionStorage.makeCatalogBackend", () => {
   );
 });
 
+describe("ConnectionStorage registration writability", () => {
+  it.effect("fails when the desktop cannot encrypt the catalog, without changing it", () =>
+    Effect.gen(function* () {
+      const saved = encodeCatalog(emptyCatalog);
+      const setConnectionCatalog = vi.fn(() => Promise.resolve(false));
+      vi.stubGlobal("window", {
+        desktopBridge: { getConnectionCatalog: () => Promise.resolve(saved), setConnectionCatalog },
+      });
+
+      const error = yield* Effect.gen(function* () {
+        const registrations = yield* Persistence.ConnectionRegistrationStore;
+        return yield* Effect.flip(registrations.assertWritable);
+      }).pipe(Effect.provide(ConnectionStorage.layer));
+
+      expect(error.operation).toBe("register-connection");
+      expect(error.message).toContain("Secret Service keyring");
+      expect(setConnectionCatalog).toHaveBeenCalledWith(saved);
+    }),
+  );
+});
+
 describe("IndexedDB connection recovery", () => {
   it.effect("reopens after a forced close and finalizes the current connection", () =>
     Effect.gen(function* () {

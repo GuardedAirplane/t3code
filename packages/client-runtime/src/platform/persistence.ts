@@ -54,6 +54,10 @@ export class ConnectionRegistrationStore extends Context.Service<
   ConnectionRegistrationStore,
   {
     /**
+     * Fails, without changing what is stored, when `register` could not save.
+     */
+    readonly assertWritable: Effect.Effect<void, ConnectionPersistenceError>;
+    /**
      * Records of routes missing from `routes` are dropped.
      */
     readonly register: (
