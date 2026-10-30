@@ -280,12 +280,13 @@ export const mergeProviderSnapshot = (
   const savedAccount = carrySavedAntigravityAccount(previousProvider, nextProvider);
   const { message: _uncheckedMessage, ...nextWithoutMessage } = nextProvider;
   const models = mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models);
-  // A folder's own catalog was read against the old machine catalog, so it rescans.
+  // Folder catalogs were compared with the old machine catalog, so every folder rescans.
   const previousWorkspaceSnapshots = Equal.equals(models, previousProvider.models)
     ? previousProvider.workspaceSnapshots
-    : previousProvider.workspaceSnapshots?.map((snapshot) =>
-        snapshot.models === undefined ? snapshot : { ...snapshot, modelsPending: true },
-      );
+    : previousProvider.workspaceSnapshots?.map((snapshot) => ({
+        ...snapshot,
+        modelsPending: true,
+      }));
   return {
     ...(savedAccount?.status === "ready" ? nextWithoutMessage : nextProvider),
     ...savedAccount,

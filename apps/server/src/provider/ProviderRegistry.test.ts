@@ -478,7 +478,8 @@ it.layer(
         })),
         [
           { cwd: "/project", models: [machineModel, projectModel], modelsPending: true },
-          { cwd: "/plain", models: undefined, modelsPending: undefined },
+          // Its folder may define a model the machine catalog just dropped.
+          { cwd: "/plain", models: undefined, modelsPending: true },
         ],
       );
     });
