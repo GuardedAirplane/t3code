@@ -42,6 +42,7 @@ import {
 } from "./settings-scoped-server";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { AutoSettleSettingsRows } from "./ThreadSettingsSections";
+import { FileAttachmentLimitSetting } from "./components/FileAttachmentLimitSetting";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 
 type SettingsPage = "threads" | "source-control" | "worktrees" | "maintenance";
@@ -394,6 +395,15 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
                   />
                 </SettingsSection>
+                <FileAttachmentLimitSetting
+                  key={targetsKey}
+                  limitMb={
+                    isMixed("fileAttachmentLimitMb") ? null : uniform("fileAttachmentLimitMb")
+                  }
+                  disabled={disabledFor("fileAttachmentLimitMb")}
+                  footer={managed("fileAttachmentLimitMb")}
+                  onChange={write}
+                />
                 <AutoSettleSettingsRows write={write} pending={pendingWrites > 0} />
               </>
             ) : null}

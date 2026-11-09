@@ -1,7 +1,8 @@
 import {
   EnvironmentId,
   ORCHESTRATION_PROTOCOL_VERSION,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  DEFAULT_FILE_ATTACHMENT_LIMIT_MB,
+  fileAttachmentLimitBytes,
   type ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -223,7 +224,10 @@ export const make = Effect.gen(function* () {
       connectionProbe: true,
       attachmentUploads: true,
       questionAttachments: true,
-      fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
+      // The server config sent to clients replaces this with the `fileAttachmentLimitMb` setting.
+      fileAttachments: {
+        maxUploadBytes: fileAttachmentLimitBytes(DEFAULT_FILE_ATTACHMENT_LIMIT_MB),
+      },
       pullRequests: true,
       pullRequestChecks: true,
       sideChats: true,

@@ -1,8 +1,13 @@
 import * as Schema from "effect/Schema";
 
-import { NonNegativeInt, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
 import {
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  NonNegativeInt,
+  PositiveInt,
+  ThreadId,
+  TrimmedNonEmptyString,
+  TurnItemId,
+} from "./baseSchemas.ts";
+import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
 } from "./chatAttachment.ts";
@@ -103,10 +108,8 @@ const FileAttachmentCreateUploadUrlInput = Schema.Struct({
   type: Schema.Literal("file"),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
   mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
-  sizeBytes: NonNegativeInt.check(
-    Schema.isGreaterThanOrEqualTo(1),
-    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_FILE_BYTES),
-  ),
+  // The server checks its `fileAttachmentLimitMb` setting; see AttachmentUploadTooLargeError.
+  sizeBytes: NonNegativeInt.check(Schema.isGreaterThanOrEqualTo(1)),
 });
 
 export const AttachmentCreateUploadUrlInput = Schema.Union([
@@ -135,6 +138,18 @@ export class AttachmentUploadSigningKeyError extends Schema.TaggedError<Attachme
 ) {
   override get message(): string {
     return "Failed to load the attachment upload signing key.";
+  }
+}
+
+export class AttachmentUploadTooLargeError extends Schema.TaggedError<AttachmentUploadTooLargeError>()(
+  "AttachmentUploadTooLargeError",
+  {
+    fileName: Schema.String,
+    limitMb: PositiveInt,
+  },
+) {
+  override get message(): string {
+    return `'${this.fileName}' is larger than this environment's ${this.limitMb} MB file attachment limit.`;
   }
 }
 

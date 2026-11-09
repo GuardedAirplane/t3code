@@ -1,4 +1,8 @@
-import type { ServerConfig, ServerConfigStreamEvent } from "@t3tools/contracts";
+import {
+  type ServerConfig,
+  type ServerConfigStreamEvent,
+  withFileAttachmentLimit,
+} from "@t3tools/contracts";
 import * as Equal from "effect/Equal";
 import * as Option from "effect/Option";
 
@@ -113,7 +117,15 @@ export function applyServerConfigProjection(
           config:
             settings === projection.config.settings
               ? projection.config
-              : { ...projection.config, settings },
+              : {
+                  ...projection.config,
+                  settings,
+                  // The server derives the advertised upload limit from settings only in a snapshot.
+                  environment: withFileAttachmentLimit(
+                    projection.config.environment,
+                    settings.fileAttachmentLimitMb,
+                  ),
+                },
           latestEvent: event,
           source: "live",
         };

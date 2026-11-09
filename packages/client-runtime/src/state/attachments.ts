@@ -1,5 +1,5 @@
 import {
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  LEGACY_FILE_ATTACHMENT_MAX_BYTES,
   WS_METHODS,
   type AttachmentCreateUploadUrlInput,
   type AttachmentCreateUploadUrlResult,
@@ -185,18 +185,36 @@ export async function runAttachmentUploadCycle<E, RE>(input: {
   return { status: "uploaded", attachmentId };
 }
 
-/**
- * The contract caps what a turn may reference, so a larger advertised value must not admit
- * files the send would then refuse.
- */
-export function clampFileAttachmentUploadBytes(advertisedMaxUploadBytes: number): number {
-  return Math.min(advertisedMaxUploadBytes, PROVIDER_SEND_TURN_MAX_FILE_BYTES);
-}
-
 export function formatAttachmentSize(sizeBytes: number): string {
   const kilobytes = Math.max(1, Math.ceil(sizeBytes / 1024));
   // Pick the unit after rounding, so 1023.5 KB reads "1.0 MB", not "1024 KB".
   return kilobytes >= 1024 ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB` : `${kilobytes} KB`;
+}
+
+/** Larger files upload slowly, and older T3 Code apps can't open a thread that contains one. */
+export function largeFileAttachmentWarning(
+  attachments: ReadonlyArray<{
+    readonly type: string;
+    readonly name: string;
+    readonly sizeBytes: number;
+  }>,
+): string | null {
+  const names = attachments
+    .filter(
+      (attachment) =>
+        attachment.type === "file" && attachment.sizeBytes > LEGACY_FILE_ATTACHMENT_MAX_BYTES,
+    )
+    .map((attachment) => `'${attachment.name}'`);
+  return names.length === 0
+    ? null
+    : `Files over 50 MB can take a while to upload, and older T3 Code apps can't open threads that contain them: ${names.join(", ")}.`;
+}
+
+/** A proxy in front of the server, such as a T3 Connect tunnel, can refuse a body the server accepts. */
+export function attachmentUploadRejectedMessage(name: string, status: number): string {
+  return status === 413
+    ? `'${name}' is too large for this connection. T3 Connect may refuse uploads over 100 MB; connect over your local network or Tailscale to send it.`
+    : `Upload failed for '${name}' (${status}).`;
 }
 
 export function fileAttachmentTooLargeMessage(name: string, maxUploadBytes: number): string {

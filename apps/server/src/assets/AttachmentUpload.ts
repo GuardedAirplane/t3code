@@ -5,6 +5,9 @@ import {
   ATTACHMENT_UPLOAD_URL_TTL_MS,
   type AttachmentCreateUploadUrlInput,
   AttachmentUploadSigningKeyError,
+  AttachmentUploadTooLargeError,
+  DEFAULT_FILE_ATTACHMENT_LIMIT_MB,
+  fileAttachmentLimitBytes,
 } from "@t3tools/contracts";
 import { isSvgAttachment } from "@t3tools/shared/image";
 import * as Clock from "effect/Clock";
@@ -32,10 +35,13 @@ import * as AssetSigner from "./AssetSigner.ts";
 import * as ServerConfig from "../config.ts";
 import { inferImageExtension } from "../imageMime.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
+import * as ServerSettings from "../serverSettings.ts";
 
 export const ATTACHMENT_UPLOAD_ROUTE_PREFIX = "/api/attachments/upload";
 
 const PENDING_ATTACHMENT_SWEEP_INTERVAL_MS = 15 * 60_000;
+/** The server sets no request deadline, so an upload body that stops arriving ends here. */
+export const ATTACHMENT_UPLOAD_STALL_TIMEOUT = "2 minutes";
 const lastPendingSweepByDirectory = new Map<string, number>();
 
 const AttachmentUploadClaims = Schema.Struct({
@@ -67,6 +73,16 @@ function decodeClaims(encodedPayload: string): AttachmentUploadClaims | null {
 export const issueAttachmentUploadUrl = Effect.fn("AttachmentUpload.issueUrl")(function* (
   input: AttachmentCreateUploadUrlInput,
 ) {
+  if (input.type === "file") {
+    // The signed size binds the upload, so this is the one place the file limit needs checking.
+    const limitMb = yield* (yield* ServerSettings.ServerSettingsService).getSettings.pipe(
+      Effect.map((settings) => settings.fileAttachmentLimitMb),
+      Effect.orElseSucceed(() => DEFAULT_FILE_ATTACHMENT_LIMIT_MB),
+    );
+    if (input.sizeBytes > fileAttachmentLimitBytes(limitMb)) {
+      return yield* new AttachmentUploadTooLargeError({ fileName: input.name, limitMb });
+    }
+  }
   const config = yield* ServerConfig.ServerConfig;
   const nowMs = yield* Clock.currentTimeMillis;
   const previousSweep = lastPendingSweepByDirectory.get(config.attachmentsDir);
@@ -182,7 +198,9 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   let receivedBytes = 0;
-  const bodyStream = body instanceof Uint8Array ? Stream.make(body) : body;
+  const bodyStream = (body instanceof Uint8Array ? Stream.make(body) : body).pipe(
+    Stream.timeout(ATTACHMENT_UPLOAD_STALL_TIMEOUT),
+  );
   return yield* Effect.gen(function* () {
     yield* fileSystem.makeDirectory(path.dirname(finalPath), { recursive: true });
     yield* Stream.run(

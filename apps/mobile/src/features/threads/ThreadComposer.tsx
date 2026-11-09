@@ -12,7 +12,6 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { useAtomValue } from "@effect/atom-react";
-import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { pastedTextDisposition, replaceTextSelection } from "@t3tools/client-runtime/text-paste";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -991,11 +990,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                       composerMenu.onSelectionChange(selection);
                     };
                     const capabilities = props.serverConfig?.environment.capabilities;
-                    const advertisedMax = capabilities?.fileAttachments?.maxUploadBytes;
-                    const maxBytes =
-                      advertisedMax === undefined
-                        ? null
-                        : clampFileAttachmentUploadBytes(advertisedMax);
+                    const maxBytes = capabilities?.fileAttachments?.maxUploadBytes ?? null;
                     const wouldExceedInputLimit =
                       paste.value.length -
                         Math.max(0, paste.selection.end - paste.selection.start) +

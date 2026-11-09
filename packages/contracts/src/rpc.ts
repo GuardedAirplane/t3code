@@ -107,6 +107,7 @@ import {
   AttachmentCreateUploadUrlResult,
   AttachmentDeleteInput,
   AttachmentUploadSigningKeyError,
+  AttachmentUploadTooLargeError,
 } from "./assets.ts";
 import {
   PersistChatAttachmentsError,
@@ -1437,7 +1438,11 @@ const WsAssetsPersistChatAttachmentsRpc = Rpc.make(WS_METHODS.assetsPersistChatA
 const WsAttachmentsCreateUploadUrlRpc = Rpc.make(WS_METHODS.attachmentsCreateUploadUrl, {
   payload: AttachmentCreateUploadUrlInput,
   success: AttachmentCreateUploadUrlResult,
-  error: Schema.Union([AttachmentUploadSigningKeyError, EnvironmentAuthorizationError]),
+  error: Schema.Union([
+    AttachmentUploadSigningKeyError,
+    AttachmentUploadTooLargeError,
+    EnvironmentAuthorizationError,
+  ]),
 });
 
 const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {

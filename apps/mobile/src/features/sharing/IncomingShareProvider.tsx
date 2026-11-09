@@ -1,7 +1,7 @@
 import * as Dialog from "../../components/ui/Dialog";
 import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
-import { EnvironmentId, PROVIDER_SEND_TURN_MAX_FILE_BYTES } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
 import {
   clearSharedPayloads,
   getResolvedSharedPayloadsAsync,
@@ -165,11 +165,8 @@ const incomingShareInbox = new IncomingShareInbox({
       fileReader: {
         readBase64,
         persistFile: async (uri, name) => {
-          const persistedUri = await persistComposerAttachmentFile(
-            uri,
-            name,
-            PROVIDER_SEND_TURN_MAX_FILE_BYTES,
-          );
+          // The destination environment's limit applies when the share is sent.
+          const persistedUri = await persistComposerAttachmentFile(uri, name);
           persistedUris.add(persistedUri);
           return persistedUri;
         },

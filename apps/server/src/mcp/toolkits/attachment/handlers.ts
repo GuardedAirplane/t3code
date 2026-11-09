@@ -55,7 +55,11 @@ export const layer = McpToolAccess.toLayer(
           Effect.gen(function* () {
             const result = yield* Upload.issueAttachmentUploadUrl(input.upload).pipe(
               Effect.provideService(AssetSigner.AssetSigner, assetSigner),
-              Effect.mapError(unavailable),
+              Effect.mapError((error) =>
+                error._tag === "AttachmentUploadTooLargeError"
+                  ? new OrchestratorMcpFailure({ code: "invalid_request", message: error.message })
+                  : unavailable(),
+              ),
             );
             const now = yield* Clock.currentTimeMillis;
             for (const [id, entry] of uploadOwners) {

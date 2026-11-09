@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 
 import {
   ChatAttachment,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  LEGACY_FILE_ATTACHMENT_MAX_BYTES,
   SnapShotAccessibility,
 } from "./chatAttachment.ts";
 
@@ -25,6 +25,19 @@ it.effect("tolerates attachment types from newer builds", () =>
   }),
 );
 
+it.effect("reads files above the old upload limit, which environments can raise", () =>
+  Effect.gen(function* () {
+    const attachment = yield* decodeAttachment({
+      type: "file",
+      id: "thread-1-00000000-0000-4000-8000-000000000003-mov",
+      name: "screen-recording.mov",
+      mimeType: "video/quicktime",
+      sizeBytes: LEGACY_FILE_ATTACHMENT_MAX_BYTES + 1,
+    });
+    assert.strictEqual(attachment.type, "file");
+  }),
+);
+
 it.effect("rejects malformed known attachment types instead of tolerating them", () =>
   Effect.gen(function* () {
     const base = {
@@ -32,10 +45,8 @@ it.effect("rejects malformed known attachment types instead of tolerating them",
       name: "report.pdf",
       mimeType: "application/pdf",
     };
-    const oversizedFile = yield* Effect.exit(
-      decodeAttachment({ ...base, type: "file", sizeBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES + 1 }),
-    );
-    assert.strictEqual(Exit.isFailure(oversizedFile), true);
+    const emptyFile = yield* Effect.exit(decodeAttachment({ ...base, type: "file", sizeBytes: 0 }));
+    assert.strictEqual(Exit.isFailure(emptyFile), true);
     const badMimeImage = yield* Effect.exit(
       decodeAttachment({ ...base, type: "image", mimeType: "application/pdf", sizeBytes: 12 }),
     );

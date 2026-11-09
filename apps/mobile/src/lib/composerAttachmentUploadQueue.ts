@@ -1,5 +1,4 @@
 import { EnvironmentId, type ServerConfig } from "@t3tools/contracts";
-import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 
 import { parseLegacyNewTaskDraftKey } from "../state/new-task-draft-key";
 import type { DraftComposerAttachment } from "./composerImages";
@@ -71,8 +70,7 @@ export function canUploadComposerAttachment(
     capabilities !== undefined &&
     (attachment.type === "image" ||
       (capabilities.fileAttachments !== undefined &&
-        attachment.sizeBytes <=
-          clampFileAttachmentUploadBytes(capabilities.fileAttachments.maxUploadBytes)))
+        attachment.sizeBytes <= capabilities.fileAttachments.maxUploadBytes))
   );
 }
 

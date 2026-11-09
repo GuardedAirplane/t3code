@@ -3,7 +3,6 @@ import {
   type ComposerContextClipboardFragment,
   type ComposerContextRecord,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   COMPOSER_CONTEXT_MAX_RECORDS,
   type EnvironmentId,
@@ -236,9 +235,8 @@ async function persistImportedAttachment(
   const fileUri = await persistComposerAttachmentFile(
     uri,
     record.name,
-    record.kind === "image"
-      ? PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
-      : PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+    // Files take the destination environment's limit when sent.
+    record.kind === "image" ? PROVIDER_SEND_TURN_MAX_IMAGE_BYTES : undefined,
   );
   if (signal.aborted) {
     await removePersistedComposerAttachmentFile(fileUri);

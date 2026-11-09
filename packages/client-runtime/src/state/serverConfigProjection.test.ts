@@ -41,7 +41,7 @@ describe("applyServerConfigProjection settingsUpdated", () => {
       },
     };
     const current = Option.some({
-      config: { settings } as unknown as ServerConfig,
+      config: { settings, environment: { capabilities: {} } } as unknown as ServerConfig,
       latestEvent: {} as ServerConfigStreamEvent,
       source: "live" as const,
     });
@@ -77,5 +77,25 @@ describe("applyServerConfigProjection settingsUpdated", () => {
       payload: { settings: decode() },
     } as ServerConfigStreamEvent);
     expect(Option.getOrThrow(next).config).toBe(Option.getOrThrow(current).config);
+  });
+
+  it("applies a changed file attachment limit without waiting for a new snapshot", () => {
+    const current = Option.some({
+      config: {
+        settings: DEFAULT_SERVER_SETTINGS,
+        environment: { capabilities: { fileAttachments: { maxUploadBytes: 50 * 1024 * 1024 } } },
+      } as unknown as ServerConfig,
+      latestEvent: {} as ServerConfigStreamEvent,
+      source: "live" as const,
+    });
+    const advertisedAfter = (fileAttachmentLimitMb: number) =>
+      Option.getOrThrow(
+        applyServerConfigProjection(current, {
+          type: "settingsUpdated",
+          payload: { settings: { ...DEFAULT_SERVER_SETTINGS, fileAttachmentLimitMb } },
+        } as ServerConfigStreamEvent),
+      ).config.environment.capabilities.fileAttachments?.maxUploadBytes;
+    expect(advertisedAfter(200)).toBe(200 * 1024 * 1024);
+    expect(advertisedAfter(0)).toBe(Number.MAX_SAFE_INTEGER);
   });
 });

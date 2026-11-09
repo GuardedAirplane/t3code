@@ -8,6 +8,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { fileAttachmentLimitBytes } from "./chatAttachment.ts";
 import { SourceControlProviderKind } from "./sourceControl.ts";
 
 export const ORCHESTRATION_PROTOCOL_VERSION = 2;
@@ -194,6 +195,21 @@ export const ExecutionEnvironmentDescriptor = Schema.Struct({
   capabilities: ExecutionEnvironmentCapabilities,
 });
 export type ExecutionEnvironmentDescriptor = typeof ExecutionEnvironmentDescriptor.Type;
+
+/** The advertised file upload limit follows the server's `fileAttachmentLimitMb` setting. */
+export function withFileAttachmentLimit(
+  descriptor: ExecutionEnvironmentDescriptor,
+  limitMb: number,
+): ExecutionEnvironmentDescriptor {
+  const maxUploadBytes = fileAttachmentLimitBytes(limitMb);
+  return descriptor.capabilities.fileAttachments === undefined ||
+    descriptor.capabilities.fileAttachments.maxUploadBytes === maxUploadBytes
+    ? descriptor
+    : {
+        ...descriptor,
+        capabilities: { ...descriptor.capabilities, fileAttachments: { maxUploadBytes } },
+      };
+}
 
 export const RepositoryIdentityLocator = Schema.Struct({
   source: Schema.Literal("git-remote"),

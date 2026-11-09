@@ -15,6 +15,15 @@ export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 100;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES = 80 * 1024 * 1024;
 export const PROVIDER_SEND_TURN_MAX_FILE_BYTES = 50 * 1024 * 1024;
+/**
+ * Older apps and servers reject file attachments above this, even when reading a thread. Clients
+ * warn before sending a larger file and assume this limit when a server advertises none.
+ */
+export const LEGACY_FILE_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
+/** The `fileAttachmentLimitMb` server setting in bytes; 0 means no limit. */
+export function fileAttachmentLimitBytes(limitMb: number): number {
+  return limitMb === 0 ? Number.MAX_SAFE_INTEGER : limitMb * 1024 * 1024;
+}
 export const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES = [
   "image/gif",
   "image/jpeg",
@@ -163,10 +172,8 @@ export const ChatFileAttachment = Schema.Struct({
   id: ChatAttachmentId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
   mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
-  sizeBytes: NonNegativeInt.check(
-    Schema.isGreaterThanOrEqualTo(1),
-    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_FILE_BYTES),
-  ),
+  // No upper bound: the server enforces its limit at upload, and every reader must decode the result.
+  sizeBytes: NonNegativeInt.check(Schema.isGreaterThanOrEqualTo(1)),
   /** Keep path-only so agents inspect selectively without consuming the context folding preserves. */
   source: Schema.optional(PastedTextAttachmentSource),
 });

@@ -41,7 +41,10 @@ it. Very large code blocks are shown without syntax highlighting.
 
 Attach up to 100 files per message. Each image can be up to 10 MiB, with at most
 80 MiB of images in one message. Other files, including videos, can be up to
-50 MiB each, subject to the environment's upload support and limit. The agent
+50 MiB each by default. To change that, set **File attachment limit** in
+Settings → Chat (Settings → Threads on mobile); 0 removes the limit. Files over
+50 MB can take a while to upload, older T3 Code apps can't open threads that
+contain them, and T3 Connect may refuse uploads over 100 MB. The agent
 receives them on the environment's machine. Provider and model limits still
 apply, including images already in the conversation. A video attachment gives
 the agent a file path; only [Antigravity](./providers-antigravity.md#skills-and-attachments)

@@ -102,6 +102,7 @@ import {
   type PullRequestRef,
   WS_METHODS,
   WsRpcGroup,
+  withFileAttachmentLimit,
 } from "@t3tools/contracts";
 import {
   HttpRouter,
@@ -1917,7 +1918,10 @@ export const layerWsRpc = (
           yield* serverSettings.getSettings,
           settingsClient,
         );
-        const environment = yield* serverEnvironment.getDescriptor;
+        const environment = withFileAttachmentLimit(
+          yield* serverEnvironment.getDescriptor,
+          settings.fileAttachmentLimitMb,
+        );
         const auth = yield* serverAuth.getDescriptor();
         const scratchWorkspaceRoot = yield* managedFolders.scratchRoot;
         const lastEventLoopStall = yield* eventLoopMonitor.latestNoticeableStall;

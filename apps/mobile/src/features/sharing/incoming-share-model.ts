@@ -1,11 +1,10 @@
 import {
-  clampFileAttachmentUploadBytes,
   fileAttachmentTooLargeMessage,
+  largeFileAttachmentWarning,
 } from "@t3tools/client-runtime/state/attachments";
 import {
   isProviderSendTurnSupportedImageMimeType,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -115,13 +114,15 @@ export function selectIncomingShareAttachments(input: {
       warnings.push(`'${attachment.name}' was skipped because this server does not support files.`);
       continue;
     }
-    const maxFileAttachmentBytes = clampFileAttachmentUploadBytes(input.maxFileAttachmentBytes);
+    const { maxFileAttachmentBytes } = input;
     if (attachment.sizeBytes > maxFileAttachmentBytes) {
       warnings.push(fileAttachmentTooLargeMessage(attachment.name, maxFileAttachmentBytes));
       continue;
     }
     attachments.push(attachment);
   }
+  const largeFileWarning = largeFileAttachmentWarning(attachments);
+  if (largeFileWarning) warnings.push(largeFileWarning);
 
   return { attachments, warnings };
 }
@@ -306,13 +307,6 @@ export async function buildIncomingShareDraft(input: {
           }
           continue;
         }
-        if (sizeBytes > PROVIDER_SEND_TURN_MAX_FILE_BYTES) {
-          warnings.push(fileAttachmentTooLargeMessage(name, PROVIDER_SEND_TURN_MAX_FILE_BYTES));
-          if (persistedFileUri) {
-            await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
-          }
-          continue;
-        }
         if (persistedFileUri === undefined && input.fileReader.persistFile) {
           persistedFileUri = await input.fileReader.persistFile(uri, name);
           // Android content sources can misreport size; record the stored copy's measured size.
@@ -322,11 +316,6 @@ export async function buildIncomingShareDraft(input: {
           }
           if (sizeBytes <= 0) {
             warnings.push(`'${name}' is empty or could not be read.`);
-            await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
-            continue;
-          }
-          if (sizeBytes > PROVIDER_SEND_TURN_MAX_FILE_BYTES) {
-            warnings.push(fileAttachmentTooLargeMessage(name, PROVIDER_SEND_TURN_MAX_FILE_BYTES));
             await releaseOwnedFiles(input.fileReader, [persistedFileUri]);
             continue;
           }

@@ -1,8 +1,5 @@
 import { isTransportConnectionErrorMessage } from "@t3tools/client-runtime/errors";
-import {
-  clampFileAttachmentUploadBytes,
-  fileAttachmentTooLargeMessage,
-} from "@t3tools/client-runtime/state/attachments";
+import { fileAttachmentTooLargeMessage } from "@t3tools/client-runtime/state/attachments";
 import type { EnvironmentShellStatus } from "@t3tools/client-runtime/state/shell";
 import type { ThreadFamilyRead } from "@t3tools/client-runtime/state/threads";
 import {
@@ -237,12 +234,9 @@ export function resolveThreadOutboxDispatchStep(input: {
   if (maxBytes === undefined) {
     return { step: "restore", reason: "This server does not support file attachments." };
   }
-  const effectiveMaxBytes = clampFileAttachmentUploadBytes(maxBytes);
-  const oversized = input.fileAttachments.find(
-    (attachment) => attachment.sizeBytes > effectiveMaxBytes,
-  );
+  const oversized = input.fileAttachments.find((attachment) => attachment.sizeBytes > maxBytes);
   return oversized
-    ? { step: "restore", reason: fileAttachmentTooLargeMessage(oversized.name, effectiveMaxBytes) }
+    ? { step: "restore", reason: fileAttachmentTooLargeMessage(oversized.name, maxBytes) }
     : { step: "send" };
 }
 

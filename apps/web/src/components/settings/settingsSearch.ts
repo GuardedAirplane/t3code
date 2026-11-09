@@ -720,6 +720,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
   },
   {
+    id: "file-attachment-limit",
+    title: "File attachment limit",
+    to: "/settings/chat",
+    searchTerms: ["upload size large file attachment mb video screen recording maximum"],
+    scope: "environment-defaults",
+  },
+  {
     id: "send-shortcut",
     title: "Send shortcut",
     to: "/settings/chat",

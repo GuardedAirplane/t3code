@@ -81,6 +81,7 @@ import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
+import { NumberField, NumberFieldGroup, NumberFieldInput } from "../ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
@@ -119,6 +120,8 @@ const RESPONSE_STREAMING_MODE_LABELS: Record<ResponseStreamingMode, string> = {
   turn: "Wait for the full response",
   paragraph: "Show finished paragraphs",
 };
+
+const NO_GROUPING: Intl.NumberFormatOptions = { useGrouping: false };
 
 const RESPONSE_STREAMING_MODE_DESCRIPTIONS: Record<ResponseStreamingMode, string> = {
   turn: "Text appears once the agent finishes its turn.",
@@ -539,6 +542,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode
       ? ["Response streaming"]
       : []),
+    ...(settings.fileAttachmentLimitMb !== DEFAULT_UNIFIED_SETTINGS.fileAttachmentLimitMb
+      ? ["File attachment limit"]
+      : []),
     ...(settings.enableProviderUpdateChecks !== DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
       ? ["Provider update checks"]
       : []),
@@ -664,6 +670,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
       snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
+      fileAttachmentLimitMb: DEFAULT_UNIFIED_SETTINGS.fileAttachmentLimitMb,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -1054,6 +1061,7 @@ export function ChatSettingsPanel() {
   ] as const;
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const mixedFileAttachmentLimit = useScopedSettingsMixed(["fileAttachmentLimitMb"]);
 
   return (
     <SettingsPageContainer>
@@ -1128,6 +1136,50 @@ export function ChatSettingsPanel() {
                 ))}
               </SelectPopup>
             </Select>
+          }
+        />
+        <SettingsRow
+          serverScoped
+          settingKeys={["fileAttachmentLimitMb"]}
+          {...searchableSetting("file-attachment-limit")}
+          description={
+            mixedFileAttachmentLimit
+              ? "The selected environments use different limits."
+              : "The largest file, in MB, that can be attached. 0 removes the limit. Files over 50 MB can upload slowly, and older T3 Code apps can't open threads that contain them."
+          }
+          resetAction={
+            settings.fileAttachmentLimitMb !== DEFAULT_UNIFIED_SETTINGS.fileAttachmentLimitMb ? (
+              <SettingResetButton
+                label="file attachment limit"
+                onClick={() =>
+                  updateSettings({
+                    fileAttachmentLimitMb: DEFAULT_UNIFIED_SETTINGS.fileAttachmentLimitMb,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <div className="flex items-center gap-1.5">
+              <NumberField
+                value={mixedFileAttachmentLimit ? null : settings.fileAttachmentLimitMb}
+                min={0}
+                step={1}
+                format={NO_GROUPING}
+                size="sm"
+                className="w-24"
+                onValueCommitted={(value) => {
+                  if (value !== null && Number.isInteger(value) && value >= 0) {
+                    updateSettings({ fileAttachmentLimitMb: value });
+                  }
+                }}
+              >
+                <NumberFieldGroup>
+                  <NumberFieldInput aria-label="File attachment limit in MB" />
+                </NumberFieldGroup>
+              </NumberField>
+              <span className="text-xs text-muted-foreground">MB</span>
+            </div>
           }
         />
         <AdvancedSettings targetIds={[searchableSetting("skills-in-slash-menu").id]}>

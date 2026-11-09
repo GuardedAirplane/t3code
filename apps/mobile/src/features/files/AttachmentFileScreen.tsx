@@ -1,10 +1,7 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import {
-  clampFileAttachmentUploadBytes,
-  formatAttachmentSize,
-} from "@t3tools/client-runtime/state/attachments";
+import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { useRef, useState } from "react";
 import { View } from "react-native";
 
@@ -231,7 +228,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
         draftKey={threadDraftKey ?? draftKey}
         maxAttachmentBytes={
           capabilities?.attachmentUploads && capabilities.fileAttachments
-            ? clampFileAttachmentUploadBytes(capabilities.fileAttachments.maxUploadBytes)
+            ? capabilities.fileAttachments.maxUploadBytes
             : undefined
         }
         onSave={() => void share()}

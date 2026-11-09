@@ -1,3 +1,4 @@
+import { largeFileAttachmentWarning } from "@t3tools/client-runtime/state/attachments";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import * as Dialog from "../../components/ui/Dialog";
@@ -162,8 +163,13 @@ export function QuestionAttachments(props: {
         return;
       }
       const rejected = append(key, picked);
+      const warning = largeFileAttachmentWarning(picked);
       if (result.error || rejected > 0)
-        Dialog.alert("Could not attach file", result.error ?? "Too many attachments.");
+        Dialog.alert(
+          "Could not attach file",
+          [result.error ?? "Too many attachments.", ...(warning ? [warning] : [])].join("\n\n"),
+        );
+      else if (warning) Dialog.alert("Large file attached", warning);
     });
     changeQuestionAttachmentPreparation(key, -1);
     if (AsyncResult.isFailure(picked)) {

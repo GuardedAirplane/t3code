@@ -1,7 +1,7 @@
 import * as Dialog from "../components/ui/Dialog";
 import { useRef } from "react";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS, type ServerConfig } from "@t3tools/contracts";
-import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
+import { largeFileAttachmentWarning } from "@t3tools/client-runtime/state/attachments";
 import { nextPastedTextFileName } from "@t3tools/client-runtime/text-paste";
 import type { ComposerTextPaste } from "../components/ComposerEditor";
 import {
@@ -49,14 +49,23 @@ export function useComposerAttachmentActions(props: {
     const operation = startComposerDraftOperation(key);
     await work(operation.signal).finally(operation.finish);
   };
-  const report = (title: string, error: string | null | undefined, rejected: number) => {
+  const report = (
+    title: string,
+    error: string | null | undefined,
+    rejected: number,
+    attached: ReadonlyArray<DraftComposerAttachment> = [],
+  ) => {
     const problems = [
       ...(error ? [error] : []),
       ...(rejected
         ? [`You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments per message.`]
         : []),
     ];
-    if (problems.length) Dialog.alert(title, problems.join("\n\n"));
+    const warning = largeFileAttachmentWarning(attached);
+    // One alert: React Native drops an alert raised while another is showing.
+    if (problems.length)
+      Dialog.alert(title, [...problems, ...(warning ? [warning] : [])].join("\n\n"));
+    else if (warning) Dialog.alert("Large file attached", warning);
   };
   const onPickDraftMedia = async () => {
     const key = props.draftKey;
@@ -71,6 +80,7 @@ export function useComposerAttachmentActions(props: {
         "Could not attach photo or video",
         result.error,
         await append(key, signal, result.attachments, insertion),
+        result.attachments,
       );
     });
   };
@@ -92,6 +102,7 @@ export function useComposerAttachmentActions(props: {
         "Could not attach file",
         result.error,
         await append(key, signal, result.files, insertion),
+        result.files,
       );
     });
   };
@@ -129,7 +140,7 @@ export function useComposerAttachmentActions(props: {
         const attachment = await createPastedTextComposerAttachment({
           text: paste.text,
           name,
-          maxBytes: clampFileAttachmentUploadBytes(maxBytes),
+          maxBytes,
         });
         const rejected = await append(key, signal, [attachment], {
           text: paste.value,

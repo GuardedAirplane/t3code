@@ -1,7 +1,7 @@
 import {
   EnvironmentId,
   getProviderAttachmentLimitError,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  LEGACY_FILE_ATTACHMENT_MAX_BYTES,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -135,10 +135,10 @@ describe("composer attachment files", () => {
         supportsAttachmentUploads: false,
         maxFileAttachmentBytes: null,
       }),
-    ).toBe(PROVIDER_SEND_TURN_MAX_FILE_BYTES);
+    ).toBe(LEGACY_FILE_ATTACHMENT_MAX_BYTES);
     expect(
       fileAttachmentCapabilityBlockReason({
-        files: [{ name: "pending.zip", sizeBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES }],
+        files: [{ name: "pending.zip", sizeBytes: LEGACY_FILE_ATTACHMENT_MAX_BYTES }],
         attachmentUploadsCapabilityKnown: false,
         supportsAttachmentUploads: false,
         maxFileAttachmentBytes: null,

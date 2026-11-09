@@ -30,6 +30,7 @@ import {
 } from "./composerAttachmentFiles";
 import {
   fileAttachmentTooLargeMessage,
+  largeFileAttachmentWarning,
   formatAttachmentSize,
 } from "@t3tools/client-runtime/state/attachments";
 import { fileContextReference, imageContextReference } from "~/lib/composerContextRecords";
@@ -226,6 +227,15 @@ export function useComposerAttachmentIntake(input: {
           storedFiles.map(fileContextReference),
           options?.selection,
         );
+      }
+      const largeFileWarning = largeFileAttachmentWarning(storedFiles);
+      if (largeFileWarning !== null) {
+        toastManager.add({
+          type: "warning",
+          title: "Large file attached",
+          description: largeFileWarning,
+          data: { hideCopyButton: true },
+        });
       }
       if (options?.source?._tag === "pasted-text" && storedFiles.length > 0) {
         const attached = storedFiles[0]!;

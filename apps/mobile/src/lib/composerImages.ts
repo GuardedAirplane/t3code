@@ -1,11 +1,8 @@
-import {
-  clampFileAttachmentUploadBytes,
-  fileAttachmentTooLargeMessage,
-} from "@t3tools/client-runtime/state/attachments";
+import { fileAttachmentTooLargeMessage } from "@t3tools/client-runtime/state/attachments";
 import {
   isProviderSendTurnSupportedImageMimeType,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  LEGACY_FILE_ATTACHMENT_MAX_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type EnvironmentId,
   type PastedTextAttachmentSource,
@@ -285,9 +282,7 @@ export async function pickComposerFiles(input: {
     return { files: [], error: null };
   }
 
-  const maxBytes = clampFileAttachmentUploadBytes(
-    input.maxBytes ?? PROVIDER_SEND_TURN_MAX_FILE_BYTES,
-  );
+  const maxBytes = input.maxBytes ?? LEGACY_FILE_ATTACHMENT_MAX_BYTES;
   const attachments: DraftComposerAttachment[] = [];
   let error: string | null = null;
   let exceededAttachmentLimit = false;
@@ -449,7 +444,7 @@ export async function pickComposerMedia(input: {
             name: asset.fileName?.trim() || file.name || "video",
             mimeType: mimeType || file.type || "application/octet-stream",
             sizeBytes: asset.fileSize ?? null,
-            maxBytes: clampFileAttachmentUploadBytes(input.maxVideoBytes),
+            maxBytes: input.maxVideoBytes,
           }),
         );
       } catch (cause) {

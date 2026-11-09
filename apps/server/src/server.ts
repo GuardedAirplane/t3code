@@ -352,7 +352,11 @@ const layerHttpServer = Layer.unwrap(
     return NodeHttpServer.layer(
       () => {
         const server = rejectRequestsUntilServing(
-          guardHttpResponseWriteErrors(NodeHttp.createServer()),
+          // No whole-request deadline: a large upload may take longer than any fixed limit, so the
+          // upload route times out a stalled body itself. Headers keep Node's default deadline.
+          guardHttpResponseWriteErrors(
+            NodeHttp.createServer({ requestTimeout: 0, headersTimeout: 60_000 }),
+          ),
         );
         if (config.privateNetworkOnly) {
           server.on("connection", (socket) => {

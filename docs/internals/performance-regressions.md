@@ -40,7 +40,7 @@ The v2 checks pin these invariants:
   Persisted events remain complete; the existing diff endpoints still provide file content when
   requested.
   Explicit cross-environment transcript exports preserve full tool bodies so the destination
-  agent can read the context. The export rejects timeline JSON above the file attachment limit
+  agent can read the context. The export rejects timeline JSON above 50 MiB
   before sending it; the client still applies its attachment limit to the complete file.
 - Live command output reaches a client only through `orchestration.subscribeCommandOutput`, which
   an expanded command row opens and closes with itself. Raw output deltas are never orchestration

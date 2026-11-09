@@ -16,31 +16,37 @@ import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { base64UrlEncode } from "../auth/utils.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import {
   claimPendingAttachments,
   releaseClaimedAttachments,
 } from "../orchestration-v2/AttachmentClaims.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
+  ATTACHMENT_UPLOAD_STALL_TIMEOUT,
   deletePendingAttachment,
   issueAttachmentUploadUrl,
   storeAttachmentUpload,
   validateAttachmentUploadToken,
 } from "./AttachmentUpload.ts";
 
-const layerTest = AssetSigner.layer.pipe(
-  Layer.provideMerge(ServerSecretStore.layer),
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-attachment-upload-" })),
-  Layer.provideMerge(
-    DocumentText.layer.pipe(
-      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+const makeLayerTest = (settings: Parameters<typeof ServerSettings.layerTest>[0] = {}) =>
+  AssetSigner.layer.pipe(
+    Layer.provideMerge(ServerSettings.layerTest(settings)),
+    Layer.provideMerge(ServerSecretStore.layer),
+    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-attachment-upload-" })),
+    Layer.provideMerge(
+      DocumentText.layer.pipe(
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
     ),
-  ),
-);
+  );
+const layerTest = makeLayerTest();
 
 const uploadInput = {
   name: "screenshot.png",
@@ -230,6 +236,33 @@ describe("AttachmentUpload", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect.each([
+    { limitMb: 1, sizeBytes: 1024 * 1024, outcome: "issued" },
+    {
+      limitMb: 1,
+      sizeBytes: 1024 * 1024 + 1,
+      outcome: "'build.log' is larger than this environment's 1 MB file attachment limit.",
+    },
+    { limitMb: 0, sizeBytes: 10 * 1024 * 1024 * 1024, outcome: "issued" },
+  ])(
+    "issues file upload URLs only within the environment's limit ($limitMb MB, $sizeBytes bytes)",
+    ({ limitMb, sizeBytes, outcome }) =>
+      Effect.gen(function* () {
+        const result = yield* issueAttachmentUploadUrl({
+          type: "file",
+          name: "build.log",
+          mimeType: "text/plain",
+          sizeBytes,
+        }).pipe(
+          Effect.as("issued"),
+          Effect.catchTags({
+            AttachmentUploadTooLargeError: (error) => Effect.succeed(error.message),
+          }),
+        );
+        expect(result).toBe(outcome);
+      }).pipe(Effect.provide(makeLayerTest({ fileAttachmentLimitMb: limitMb }))),
+  );
+
   it.effect("stores MIME-identified SVG files with a previewable signed extension", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
@@ -315,6 +348,33 @@ describe("AttachmentUpload", () => {
       ).toHaveLength(1);
 
       yield* Fiber.interrupt(upload);
+      expect(NodeFS.readdirSync(config.attachmentsDir)).toEqual([]);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("ends an upload whose body stops arriving", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const issued = yield* issueAttachmentUploadUrl(uploadInput);
+      const token = issued.relativeUrl.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length);
+      const claims = yield* validateAttachmentUploadToken(token);
+      if (!claims) {
+        throw new Error("Expected valid upload claims.");
+      }
+
+      const nextChunkRequested = yield* Deferred.make<void>();
+      const body = Stream.make(new Uint8Array([1, 2, 3])).pipe(
+        Stream.concat(
+          Stream.fromEffect(
+            Deferred.succeed(nextChunkRequested, undefined).pipe(Effect.andThen(Effect.never)),
+          ),
+        ),
+      );
+      const upload = yield* storeAttachmentUpload(claims, body).pipe(Effect.forkScoped);
+
+      yield* Deferred.await(nextChunkRequested);
+      yield* TestClock.adjust(ATTACHMENT_UPLOAD_STALL_TIMEOUT);
+      expect(yield* Fiber.join(upload)).toMatchObject({ ok: false, status: 400 });
       expect(NodeFS.readdirSync(config.attachmentsDir)).toEqual([]);
     }).pipe(Effect.provide(layerTest)),
   );

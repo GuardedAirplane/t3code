@@ -1,12 +1,9 @@
 import {
   type EnvironmentId,
   isProviderSendTurnSupportedImageMimeType,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  LEGACY_FILE_ATTACHMENT_MAX_BYTES,
 } from "@t3tools/contracts";
-import {
-  clampFileAttachmentUploadBytes,
-  fileAttachmentTooLargeMessage,
-} from "@t3tools/client-runtime/state/attachments";
+import { fileAttachmentTooLargeMessage } from "@t3tools/client-runtime/state/attachments";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "../../composerDraftStore";
 import { isHeicImageFile } from "../../lib/imageCompression";
@@ -123,12 +120,12 @@ export function composerOtherFilesForPresentation(
 
 export function fileAttachmentStagingLimit(input: FileAttachmentCapabilityState): number | null {
   if (!input.attachmentUploadsCapabilityKnown) {
-    return PROVIDER_SEND_TURN_MAX_FILE_BYTES;
+    return LEGACY_FILE_ATTACHMENT_MAX_BYTES;
   }
   if (!input.supportsAttachmentUploads || input.maxFileAttachmentBytes === null) {
     return null;
   }
-  return clampFileAttachmentUploadBytes(input.maxFileAttachmentBytes);
+  return input.maxFileAttachmentBytes;
 }
 
 export function fileAttachmentCapabilityBlockReason(

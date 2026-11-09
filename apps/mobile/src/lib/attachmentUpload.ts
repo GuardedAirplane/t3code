@@ -1,5 +1,6 @@
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import {
+  attachmentUploadRejectedMessage,
   isAssetAttachmentNotFoundFailure,
   runAttachmentUploadCycle,
   verifyPersistedAttachmentUpload,
@@ -239,7 +240,7 @@ async function uploadFileBytes(
         : {}),
     });
     if (result.status < 200 || result.status >= 300) {
-      throw new Error(`Upload failed for '${attachment.name}' (${result.status}).`);
+      throw new Error(attachmentUploadRejectedMessage(attachment.name, result.status));
     }
   } finally {
     if (fileUri === undefined && file.exists) file.delete();
